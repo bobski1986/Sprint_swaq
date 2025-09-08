@@ -107,22 +107,22 @@ mass_area_as_farms_bas_dk <- cbind(mass_as_farms_bas_dk, area_as_farms_bas_dk |>
 # Intersect danish gemap with river network
 
 # Danish river network from the HYDROSHEDS database
-# rivers_nl <- dir_ls(path_home_r(), recurse = T, regexp = "hydrosheds_lvl12_rivers_nl.gpkg") |>
-#   vect() |>
-#   select("HYRIV_ID",
-#          "HYBAS_L12",
-#          "LENGTH_KM",
-#          "ria_ha_csu",
-#          "DIS_AV_CMS",
-#          "dis_m3_pyr",
-#          "dis_m3_pmn",
-#          "dis_m3_pmx",
-#          "ORD_FLOW",
-#          "sgr_dk_rav",
-#          "riv_tc_csu") |>
-#   tidyterra::mutate(WIDTH_M = (ria_ha_csu * 10000) / (LENGTH_KM *1000)) |>
-#   tidyterra::rename(HYBAS_ID = HYBAS_L12) |>
-#   terra::mask(basins_nl)
+rivers_nl <- dir_ls(path_home_r(), recurse = T, regexp = "hydrosheds_lvl12_rivers_dk.gpkg") |>
+  vect() |>
+  select("HYRIV_ID",
+         "HYBAS_L12",
+         "LENGTH_KM",
+         "ria_ha_csu",
+         "DIS_AV_CMS",
+         "dis_m3_pyr",
+         "dis_m3_pmn",
+         "dis_m3_pmx",
+         "ORD_FLOW",
+         "sgr_dk_rav",
+         "riv_tc_csu") |>
+  tidyterra::mutate(WIDTH_M = (ria_ha_csu * 10000) / (LENGTH_KM *1000)) |>
+  tidyterra::rename(HYBAS_ID = HYBAS_L12) |>
+  terra::mask(basins_nl)
 
 ####################################################################
 ########### START: Pesticide Runoff Model Schriever 2007 ###########
