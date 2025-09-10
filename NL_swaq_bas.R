@@ -25,10 +25,10 @@ district_nl_select <- nuts3_nl |> select(NUTS_NAME)
 # Define the approximate bounding box for the Netherlands in EPSG:32631 coordinates.
 # crs_utm31n_nl <- "EPSG:32631"
 
-# xmin <- 525976.598198582  # Approximate western boundary (easting)
-# xmax <- 781549.306160638  # Approximate eastern boundary (easting)
-# ymin <- 5627507.94888309 # Approximate southern boundary (northing)
-# ymax <- 5929938.95158156 # Approximate northern boundary (northing)
+xmin <- 525976.598198582  # Approximate western boundary (easting)
+xmax <- 781549.306160638  # Approximate eastern boundary (easting)
+ymin <- 5627507.94888309 # Approximate southern boundary (northing)
+ymax <- 5929938.95158156 # Approximate northern boundary (northing)
 
 # Define the desired pixel resolution (size of each cell). 
 # The size of the pixel is defined based on the smallest size of the vector to be rasterised, e.g., 10m buffer polygons around river segments
@@ -761,7 +761,7 @@ pec_swater_nl <- leaflet(options = leafletOptions(zoomControl = F)) %>%
                    group = "Esri World Topo Map") %>%
   addPolygons(data = basins_nl,
               fillColor = "grey",
-              fillOpacity = 0.15,
+              fillOpacity = 0.05,
               stroke = T,
               color = "black",
               dashArray = "line",
@@ -841,7 +841,6 @@ pec_swater_nl
 }
 
 pec_streams_to_basin_nl(conc_rivseg_agg_rast_nl[1], conc_rivseg_agg_vect_nl[[1]])
-
 
 #################################################################
 ########### END: Pesticide surface water map ####################
