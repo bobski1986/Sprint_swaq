@@ -1,4 +1,4 @@
-chemprop_gen <- function(acsubst_name) {
+chemprop_gen <- function(Active) {
   
   # Load the necessary libraries
   pkg <- c("rvest", "tidyverse", "stringr", "readxl")
@@ -201,7 +201,7 @@ chemprop_gen <- function(acsubst_name) {
   ASs[which(ASs == "Mcpb")] <- "MCPB"
   ASs[which(ASs == "Mcpa")] <- "MCPA"
   
-  ASs <- ASs[which(ASs %in% acsubst_name)]
+  ASs <- ASs[which(ASs %in% Active)]
 
   # Extract the properties of the chemicals
   ppdb_df_prop <- list()
@@ -218,7 +218,9 @@ chemprop_gen <- function(acsubst_name) {
     kd_index <- list()
     logP_index <- list()
     noec_eworm_ch_repro_index <- list()
-    noec_fish_ch_index <- list()
+    lc50_eworm_ac_14d_index <- list()
+    noec_fish_ch_21d_index <- list()
+    lc50_fish_ac_96h_index <- list()
     ppdb_df <- list()
     ppdb_df_values <- list()
     
@@ -240,10 +242,11 @@ chemprop_gen <- function(acsubst_name) {
     koc_index[[as]] <- which(ppdb_df[[as]] == regex("Koc (mL g⁻¹)")) + 1
     kfoc_index[[as]] <- which(ppdb_df[[as]] == regex("Kfoc (mL g⁻¹)")) + 1
     kd_index[[as]] <- which(ppdb_df[[as]] == regex("Kd (mL g⁻¹)")) + 1
-    kd_index[[as]] <- which(ppdb_df[[as]] == regex("Kd (mL g⁻¹)")) + 1
     logP_index[[as]] <- which(ppdb_df[[as]] == regex("Log P")) + 1
-    noec_eworm_ch_repro_index[[as]] <- which(ppdb_df[[as]] == regex("Earthworms - Chronic NOEC, reproduction (mg kg⁻¹)")) + 1
+    noec_eworm_ch_repro_index[[as]] <- which(ppdb_df[[as]] == regex("Earthworms - Chronic NOEC, reproduction (mg kg⁻¹ dw soil)")) + 1
+    lc50_eworm_ac_14d_index[[as]] <-  which(ppdb_df[[as]] == regex("Earthworms - Acute 14 day LC₅₀ (mg kg⁻¹ dw soil)")) + 1
     noec_fish_ch_index[[as]] <- which(ppdb_df[[as]] == regex("Temperate Freshwater Fish - Chronic 21 day NOEC (mg l⁻¹)")) + 1
+    lc50_fish_ac_96h_index[[as]] <-  which(ppdb_df[[as]] == regex("Temperate Freshwater Fish - Acute 96 hour LC₅₀ (mg l⁻¹)")) + 1
     
     # Extract the values of the selected properties
     ppdb_df_values[[as]] <- ppdb_df[[as]] |> slice(CAS_index[[as]],
@@ -256,21 +259,25 @@ chemprop_gen <- function(acsubst_name) {
                                                    kfoc_index[[as]],
                                                    kd_index[[as]],
                                                    noec_eworm_ch_repro_index[[as]],
-                                                   noec_fish_ch_index[[as]])
-    
-    # Create a table with the extracted properties
-    ppdb_df_prop[[as]] <- tibble(acsubst_name = ASs[as],
+                                                   lc50_eworm_ac_14d_index[[as]],
+                                                   noec_fish_ch_index[[as]],
+                                                   lc50_fish_ac_96h_index[[as]])
+
+        # Create a table with the extracted properties
+    ppdb_df_prop[[as]] <- tibble(Active = ASs[as],
                                  "CAS" = ppdb_df_values[[as]][[1,1]],
                                  "SMILES" = ppdb_df_values[[as]][[2,1]],
                                  "solub_water_20_mg.L" = ppdb_df_values[[as]][[3,1]],
                                  "DT50_field_d" = ppdb_df_values[[as]][[4,1]],
-                                 "DT50_typical_d" =ppdb_df_values[[as]][[5,1]],
+                                 "DT50_typical_d" = ppdb_df_values[[as]][[5,1]],
                                  "logP_L.L" = ppdb_df_values[[as]][[6,1]],
                                  "Koc_ml.g" = ppdb_df_values[[as]][[7,1]],
                                  "Kfoc_ml.g" = ppdb_df_values[[as]][[8,1]],
                                  "Kd_soil_ml.g" = ppdb_df_values[[as]][[9,1]],
                                  "NOEC_earthworm_chron_repr_mg.kg" = ppdb_df_values[[as]][[10,1]],
-                                 "NOE_fish_21_mg.L" = ppdb_df_values[[as]][[11,1]])
+                                 "LC50_earthworm_acute_14d_mg.kg" = ppdb_df_values[[as]][[11,1]],
+                                 "NOEC_fish_21_mg.L" = ppdb_df_values[[as]][[12,1]],
+                                 "LC50_fish_acute_96h_mg.kg" = ppdb_df_values[[as]][[13,1]])
     
     
     cat("\r", ASs[as], "properties are being extracted.", length(ASs) - which(ASs == ASs[as]), "chemicals left.")
@@ -278,7 +285,15 @@ chemprop_gen <- function(acsubst_name) {
     
   }
   
-  chemprop_sel <- ppdb_df_prop |> bind_rows() |> mutate(across(4:last_col(), as.numeric))
+  chemprop_sel <- ppdb_df_prop |>
+    bind_rows() |>
+    mutate(NOEC_earthworm_chron_repr_mg.kg = str_remove_all(NOEC_earthworm_chron_repr_mg.kg, pattern = "[><=\\s]"),
+           LC50_earthworm_acute_14d_mg.kg = str_remove_all(LC50_earthworm_acute_14d_mg.kg, pattern = "[><=\\s]"),
+           NOEC_fish_21_mg.L = str_remove_all(NOEC_fish_21_mg.L, pattern = "[><=\\s]"),
+           LC50_fish_acute_96h_mg.kg = str_remove_all(LC50_fish_acute_96h_mg.kg, pattern = "[><=\\s]"))
+
+    
+  return(chemprop_sel)
   
   # Save poperties extracted from the PPDB for all pesticides
   # write_excel_csv2(ppdb_df_prop |> bind_rows(),"chem_prop_ppdb.csv")

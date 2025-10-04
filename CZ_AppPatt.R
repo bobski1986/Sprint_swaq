@@ -3,7 +3,7 @@
 ####################################################
 
 # Create a vector of packages
-pkg <- c("fs" ,"sf", "terra", "RCzechia", "tidyverse", "tidygeocoder", "tmap", "data.table", "fuzzyjoin", "readxl")
+pkg <- c("fs" ,"sf", "terra", "RCzechia", "tidyverse", "tidygeocoder", "tmap", "data.table", "fuzzyjoin", "readxl", "tidyterra")
 
 # Download required packages
 for (i in pkg) {
@@ -29,7 +29,7 @@ district_names <- districts$NAZ_LAU1
 
 # Get the CZ crop-district map
 crop_map_cz_dist <- dir_ls(path_home_r(), recurse = T, regexp = "crop_district_map2021_cz.gpkg$") |> 
-  st_read()
+  vect()
 
 # Mass of used individual ai and areas under application for whole district# Mass of used individual ai and areas under application for whDistrictole district
 ai_usage_mass_dist <- list()
@@ -46,7 +46,6 @@ for (i in seq_along(district_names)) {
   cat("\rAS mass table for district",i,"joined")
 }
 
-
 ai_usage_area_dist <- list()
 for (i in seq_along(district_names)) {
   ai_usage_area_dist[[i]] <- ai_area_crop_type_list|>
@@ -60,7 +59,6 @@ for (i in seq_along(district_names)) {
   
   cat("\rAS area table for district",i,"joined")
 }
-
 
 # Total application rate per district
 ai_usage_rate <- list()
@@ -76,7 +74,6 @@ for(i in seq_along(ai_usage_mass_dist)){
     
   }
 }
-
 
 # Join GenAP with usage data
 ai_usage_genap_rate <- list()
@@ -178,8 +175,6 @@ tm_shape(gemap_ben |> filter(AS_ppdb_name %in% ASs[42:50])) +
 
 tmap_save(gemap41_100_cz, "gemap41_100_cz.png", dpi = 600, scale = 0.5)
 # tmap_animation(gemap11_20_cz, "gemap11_20_cz.gif", fps = 0.25, width=1200, height = 1200, dpi = 200)
-
-
 
 # Get the crop cover distribution for CZ
 # crop_map_cz <- dir_ls(path_home_r(), recurse = T, regexp = "GEOPROSTOR_ZADOSTI_2021-12-31.shp$") |> 

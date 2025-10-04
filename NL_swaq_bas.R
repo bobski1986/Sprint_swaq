@@ -22,7 +22,7 @@ nuts1_nl <- nuts |>
 
 district_nl_select <- nuts3_nl |> select(NUTS_NAME)
 
-# Define the approximate bounding box for the Netherlands in EPSG:32631 coordinates.
+# Define the approximate bounding box for country in EPSG:32631 coordinates.
 # crs_utm31n_nl <- "EPSG:32631"
 
 xmin <- 525976.598198582  # Approximate western boundary (easting)

@@ -17,7 +17,7 @@ nuts <- dir_ls(path_home_r(), recurse = T, regexp = "/NUTS_RG_20M_2024_4326.shp$
 nuts3_dk <- nuts |>
   filter(CNTR_CODE == "DK" & LEVL_CODE == 3)
 
-# Define the approximate bounding box for the Netherlands in EPSG:32631 coordinates.
+# Define the approximate bounding box for country in EPSG:32631 coordinates.
 crs_utm31n_dk <- "EPSG:32631"
 
 project(nuts3_dk, crs_utm31n_dk)

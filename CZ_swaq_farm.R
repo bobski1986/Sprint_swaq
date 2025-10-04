@@ -1,6 +1,6 @@
 # Install and load packages
-pkg <- c("tidyverse", "readxl", "fs", "RCzechia", "terra", "tmap", "tmaptools", "data.table", "openxlsx", "OpenStreetMap", "tidyterra", "sf", "leafgl", "leaflet", "rvest")
-
+pkg <- c("tidyverse", "fs", "readxl", "terra", "tmap", "OpenStreetMap", "tidyterra", "sf", "data.table", "fuzzyjoin", "openxlsx", 'ncdf4',
+         "leaflet", "htmltools", "htmlwidgets", "RCzechia", "RColorBrewer")
 for (i in pkg) {
   if (!requireNamespace(i, quietly = TRUE)) {
     install.packages(i)
@@ -708,7 +708,7 @@ AS_dynmap_topsoil <- function(district_name,
   acsubst_name <-  "Glyphosate"
   app_month <- "July"
   app_startday <- 1
-  endday <- 30
+  endday <- 56
   
   ######################################################################
   ############# START: Import and transform input data sets ############
@@ -1308,7 +1308,7 @@ AS_dynmap_topsoil <- function(district_name,
 
 AS_dynmap_topsoil("Benešov","Acetamiprid", "July", 1, 30 , 100)
 
-# Function for simulating and visualising ASs concentration in topsoil on all fields and in riverwater for one selected district #
+# Function for simulating and visualising ASs concentration in topsoil on all fields and in riverwater buffer for one selected district #
 
 AS_statmap_topsoil_riverwater <- function(district_name,
                                           acsubst_name,
@@ -1322,28 +1322,29 @@ AS_statmap_topsoil_riverwater <- function(district_name,
   basins_nrmin <- 1
   basins_nrmax <- 21
   acsubst_name <- c("Dimoxystrobin",
-                    "Difenoconazole",
-                    "Doscalid",
-                    "Fluazinam",
-                    "Prochloraz",
-                    "Diquat",
-                    "Azoxystrobin",
-                    "Pethoxamid",
-                    "Benzovindiflupyr",
-                    "Tebuconazole",
-                    "Quinmerac",
-                    "Mefentrifluconazole",
-                    "Cyproconazole",
-                    "Tefluthrin",
-                    "Picloram",
-                    "Metazachlor",
-                    "Pendimethalin",
-                    "Gamma-cyhalothrin",
-                    "Deltamethrin",
-                    "Epoxiconazole",
-                    "Glyphosate",
-                    "Spiroxamine",
-                    "Terbuthylazine")
+                    "Difenoconazole")
+                    # "Doscalid",
+                    # "Fluazinam",
+                    # "Prochloraz",
+                    # "Diquat",
+                    # "Azoxystrobin",
+                    # "Pethoxamid",
+                    # "Benzovindiflupyr",
+                    # "Tebuconazole",
+                    # "Quinmerac",
+                    # "Mefentrifluconazole",
+                    # "Cyproconazole",
+                    # "Tefluthrin",
+                    # "Picloram",
+                    # "Metazachlor",
+                    # "Pendimethalin",
+                    # "Gamma-cyhalothrin",
+                    # "Deltamethrin",
+                    # "Epoxiconazole",
+                    # "Glyphosate",
+                    # "Spiroxamine",
+                    # "Terbuthylazine")
+  sim_yr <- 2021
   app_month <- "July"
   app_startday <- 1
   endday <- 56
@@ -1392,10 +1393,9 @@ AS_statmap_topsoil_riverwater <- function(district_name,
   
   for (basin in seq_along(basins_cz_distr_max)) {
     
-    gemap_loc[[basin]] <- dir_ls(path_home_r(), recurse = T, regexp = "gemap100_model_cz.gpkg") |>
+    gemap_loc[[basin]] <- dir_ls(path_home_r(), recurse = T, regexp = "gemap100_ben_wgs84_cz") |>
       vect(extent = ext(basins_cz_distr_max[[basin]])) |>
       mask(basins_cz_distr_max[[basin]]) |>
-      # mask(basins_cz_distr_max[[basin]]) |>
       mutate(District = str_to_title((gsub("_", " ", District, fixed = TRUE))),
              Active = str_to_title(Active)) |>
       filter(Active %in% acsubst_name) |> 
@@ -1419,7 +1419,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
   }
   
   gemap_loc <- gemap_loc |> vect() |> terra::intersect(basins_cz_distr["HYBAS_ID"])
-  
+
   # CHMU Rainfall#
   # For the moment: rainfall data remain separate dataset to be later connected with the crop BBCH and scheduled in PPP registry AS application
   meteo_stations <- read.csv(dir_ls(path_home_r(),
@@ -1438,6 +1438,12 @@ AS_statmap_topsoil_riverwater <- function(district_name,
   
   Sys.setlocale("LC_TIME", "uk")
   
+  start_date <- make_date(year = sim_yr, month = match(app_month, month.name), day = app_startday)
+  end_date <- start_date + days(endday)
+  sim_months <- seq(start_date, end_date, by = "day") |>
+    lubridate::month(label = TRUE, abbr = FALSE, locale = Sys.getlocale("LC_TIME")) |>
+    unique()
+
   meteo_stations_prec_basins <- dir_ls(path_home_r(),
                                        recurse = T,
                                        regexp = "srazky_SRA.csv") |>
@@ -1456,9 +1462,8 @@ AS_statmap_topsoil_riverwater <- function(district_name,
               relationship = "many-to-many") |>
     filter(!is.na(rain_mm.day),
            rain_mm.day >= 0,
-           # Filter the month for which to run daily simulations
-           # Filter number of days: from first day of AS application to several day after
-           month == app_month, between(day, app_startday, endday)) |>
+           # Filter months for which to run daily simulations
+           month %in% sim_months) |>
     # Average daily rainfall in selected basins calculated from stations within basin polygons
     vect(crs = "WGS84", geom = c("Geogr1", "Geogr2")) |>
     mask(basins_cz_distr) |>
@@ -1466,8 +1471,13 @@ AS_statmap_topsoil_riverwater <- function(district_name,
     group_by(month, day) |>
     summarise(rain_mean_mm.day = mean(rain_mm.day),
               rain_min_mm.day = min(rain_mm.day),
-              rain_max_mm.day = max(rain_mm.day))
-  
+              rain_max_mm.day = max(rain_mm.day)) |> 
+    ungroup() |> 
+    # Filter number of days: from first day of AS application to several day after
+   slice(1:endday) |> 
+    mutate(ndays = n())
+    
+    
   # Terrain slope #
   # Data cropped to include only country of interest and saved. Done only once
   ## FAO
@@ -1549,13 +1559,21 @@ AS_statmap_topsoil_riverwater <- function(district_name,
   
   # Chemical input data from qsars (vega, epi) and PPDB where available #
   source(dir_ls(path_home_r(), recurse = T, regexp = "ppdb scraping"))
-  chemprop <- chemprop_gen(acsubst_name |> str_to_title()) |> 
-    select(acsubst_name, Kfoc_ml.g, DT50_field_d, DT50_typical_d, Koc_ml.g) |> 
-    filter(!is.na(Kfoc_ml.g),
-           !is.na(Koc_ml.g),
-           !is.na(DT50_field_d),
-           !is.na(DT50_typical_d))
-  
+  chemprop <- chemprop_gen(Active = acsubst_name) |> 
+    select(Active,
+           DT50_typical_d,
+           Koc_ml.g,
+           DT50_field_d,
+           Kfoc_ml.g, 
+           NOEC_earthworm_chron_repr_mg.kg,
+           LC50_earthworm_acute_14d_mg.kg,
+           NOEC_fish_21_mg.L,
+           LC50_fish_acute_96h_mg.kg) |> 
+    mutate(across(2:last_col(), as.numeric),
+           NOEC_earthworm_chron_repr_mg.kg = coalesce(NOEC_earthworm_chron_repr_mg.kg, LC50_earthworm_acute_14d_mg.kg/10),
+           NOEC_fish_21_mg.L = coalesce(NOEC_fish_21_mg.L, LC50_fish_acute_96h_mg.kg),
+           Kfoc_ml.g = coalesce(Kfoc_ml.g, Koc_ml.g))
+
   ####################################################################
   ############# END: Import and transform input data sets ############
   ####################################################################
@@ -1656,17 +1674,17 @@ AS_statmap_topsoil_riverwater <- function(district_name,
            crop_acsubst_mass_basin_g = crop_acsubst_area_basin_ha * aprate_farm_g.ha,
            crop_acsubst_mass_frac_basin = crop_acsubst_mass_basin_g / acsubst_mass_g) |>
     left_join(chemprop,
-              by = c("acsubst" = "acsubst_name"))
+              by = c("acsubst" = "Active"))
   
-  #######################################################################################
-  ############ END: Spatial input data intersected with river basin ###################
-  #######################################################################################
+#######################################################################################
+############ END: Spatial input data intersected with river basin ###################
+#######################################################################################
   
-  ####################################################################
-  ########### START: Pesticide Runoff Model Schriever 2007 ###########
-  ####################################################################
-  
-  # Model subroutines related to pesticide runoff from individual farms
+####################################################################
+########### START: Pesticide Runoff Model Schriever 2007 ###########
+####################################################################
+
+    # Model subroutines related to pesticide runoff from individual farms
   load_acsubst_farm <- acsubst_application_basin_distr |>
     mutate(apfreq = case_when(apfreq == NA ~ 1, .default = 1)) |>
     cbind(orcarb_river_seg$orcarb_perc |>
@@ -1735,8 +1753,9 @@ AS_statmap_topsoil_riverwater <- function(district_name,
     bind_cols(meteo_stations_prec_basins) |>
     mutate(across(starts_with("srunoff"), ~ case_when(.x < 0 ~ 0, .default = .x)))
   # filter(srunoff_max_loamy_mm.day > 0 & srunoff_max_sandy_mm.day > 0)
-  
-  ## Daily amount of pesticide potentially reaching a stream from individual farms
+
+  # Calculate daily amount of pesticide load potentially reaching a stream from individual farms
+  # Calculate lagged and time-weighted soil concentration
   srunoff_acsubst_farm <- list()
   for (i in seq_along(load_acsubst_farm)) {
     
@@ -1748,11 +1767,11 @@ AS_statmap_topsoil_riverwater <- function(district_name,
              srunoff_max_fraction = case_when(sand_perc > clay_perc ~ srunoff_max_sandy_mm.day/rain_max_mm.day,
                                               sand_perc < clay_perc ~ srunoff_max_loamy_mm.day/rain_max_mm.day),
              across(starts_with("srunoff"), ~ case_when(.x == "NaN" ~ 0, .default = .x)),
-             ndays = max(meteo_stations_prec_basins$day),
              frac_asubst_soil_water_lag = exp(-day * log(2) / DT50_typical_d) * frac_asubst_soil_water_ini,
              frac_asubst_soil_solid_lag = exp(-day * log(2) / DT50_typical_d) * frac_asubst_soil_solid_ini,
              conc_acsubst_total_soil_lag_g.kg = (frac_asubst_soil_water_lag + frac_asubst_soil_solid_lag) * conc_acsubst_total_soil_ini,
              conc_acsubst_total_soil_twa_g.kg = (conc_acsubst_total_soil_ini / (ndays * (log(2) / DT50_typical_d))) * (1 - exp(-ndays * (log(2) / DT50_typical_d))),
+             rq_acsubst_total_soil_twa = (conc_acsubst_total_soil_twa_g.kg)/NOEC_earthworm_chron_repr_mg.kg,
              ## Product of AS runoff components
              load_acsubst_prod = pmap_dbl(list(crop_acsubst_area_basin_ha,
                                                aprate_basin,
@@ -1768,7 +1787,8 @@ AS_statmap_topsoil_riverwater <- function(district_name,
              load_acsubst_max_g.day = load_acsubst_prod * srunoff_max_fraction,
              load_acsubst_mean_g.ndays = mean(load_acsubst_mean_g.day),
              load_acsubst_min_g.ndays = mean(load_acsubst_min_g.day),
-             load_acsubst_max_g.ndays = mean(load_acsubst_max_g.day)) |> slice(1)
+             load_acsubst_max_g.ndays = mean(load_acsubst_max_g.day)) |> 
+      slice(1)
     
     # rename("srunoff_day" = "day")
     
@@ -1776,45 +1796,111 @@ AS_statmap_topsoil_riverwater <- function(district_name,
     
   }
   
-  load_acsubst_farm_mapinput <- srunoff_acsubst_farm |> vect()
-  
-  conc_acsubst_river_seg_mapinput <- load_acsubst_farm_mapinput |>
+  # Combine AS concentration in soil results on individual farms
+  # Calculate RQ for individual farms and individual AS
+   soil_farm_mapinput <- srunoff_acsubst_farm |> 
+     vect() |>
+     select(conc_acsubst_total_soil_ini,
+            conc_acsubst_total_soil_twa_g.kg,
+            rq_acsubst_total_soil_twa,
+            load_acsubst_mean_g.ndays,
+            load_acsubst_min_g.ndays,
+            load_acsubst_max_g.ndays,
+            Crop,
+            acsubst,
+            month,
+            ndays,
+            District,
+            ZKOD,
+            CTVEREC)
+   
+   # Calculate cumulative RQ in soil for individual fields
+   soil_RQ_nest <- soil_farm_mapinput |>        
+     values() |> 
+     group_by("ZKOD", "CTVEREC", "Crop") |> 
+     arrange(desc(rq_acsubst_total_soil_twa), .by_group = T) |>
+     # distinct(ZKOD, CTVEREC, Crop, acsubst, .keep_all = T) |> 
+     unite("AS_rq", acsubst, rq_acsubst_total_soil_twa, sep = "|", remove = FALSE) |>
+     select(ZKOD, CTVEREC, Crop, AS_rq) |>
+     nest("AS_rq" = AS_rq) |> 
+     ungroup() |> 
+     select(-c(1:3))
+   
+    soil_cumRQ <- soil_farm_mapinput |> 
+     select("ZKOD", "CTVEREC", "Crop", "rq_acsubst_total_soil_twa") |> 
+     aggregate(c("ZKOD", "CTVEREC", "Crop"), fun = "sum") |> 
+     mutate(sum_rq_acsubst_total_soil_twa = round(sum_rq_acsubst_total_soil_twa))
+   
+   soil_RQ_all <- terra::merge(soil_cumRQ, soil_RQ_nest, by = c("Crop", "ZKOD", "CTVEREC")) |> 
+     mutate(AS_rq = str_remove_all(AS_rq, "\""),
+            AS_rq = str_remove_all(AS_rq, "list"),
+            AS_rq = str_remove_all(AS_rq, "AS_rq"),
+            AS_rq = str_remove_all(AS_rq, "c"),
+            AS_rq = str_remove_all(AS_rq, "="),
+            AS_rq = str_remove_all(AS_rq, "\\("),
+            AS_rq = str_remove_all(AS_rq, "\\)")) |> 
+     mask(district_select)
+    
+   # Combine AS concentration in river water from river buffer segments
+   # Calculate RQ for individual river segments and individual AS
+   river_seg_mapinput <- soil_farm_mapinput[c("load_acsubst_mean_g.ndays",
+                                              "load_acsubst_min_g.ndays",
+                                              "load_acsubst_max_g.ndays",
+                                              "acsubst",
+                                              "month",
+                                              "ndays",
+                                              "District")] |>
     makeValid() |>
-    terra::intersect(rivers_basin_buff_seg) |> 
-    group_by(SHAPE_Leng, HYDROID, acsubst, month, ndays, dis_m3_pyr, dis_m3_pmn, dis_m3_pmx) |>
-    summarise(conc_mean_river_seg = mean(load_acsubst_mean_g.ndays/dis_m3_pyr),
-              conc_min_river_seg = mean(load_acsubst_min_g.ndays/dis_m3_pmn),
-              conc_max_river_seg = mean(load_acsubst_max_g.ndays/dis_m3_pmx)) |> 
+    terra::intersect(rivers_basin_buff_seg[c("HYDROID", "SHAPE_Leng", "dis_m3_pyr", "dis_m3_pmn", "dis_m3_pmx")]) |> 
+    terra::merge(chemprop[c("Active", "NOEC_earthworm_chron_repr_mg.kg", "NOEC_fish_21_mg.L")], by.x = "acsubst", by.y = "Active") |> 
+    group_by(SHAPE_Leng, HYDROID) |>
+    mutate(conc_mean_river_seg = mean(load_acsubst_mean_g.ndays/(dis_m3_pyr*1000)),
+              conc_min_river_seg = mean(load_acsubst_min_g.ndays/(dis_m3_pmn*1000)),
+              conc_max_river_seg = mean(load_acsubst_max_g.ndays/(dis_m3_pmx*1000)),
+              rq_mean_river_seg_twa = conc_mean_river_seg/NOEC_fish_21_mg.L) |>
     # add extra buffer only for plotting
     buffer(rivbuff_width)
-  
-  
 
-writeVector(conc_acsubst_river_seg_mapinput,
-             paste0(district_name, "_", acsubst_name, "_riverwater.gpkg"),
-             overwrite = T)
+  # Calculate cumulative RQ in river water for individual river segments
+   
+   river_RQ_nest <- river_seg_mapinput |>        
+     values() |> 
+     group_by(SHAPE_Leng, HYDROID) |> 
+     arrange(desc(rq_mean_river_seg_twa), .by_group = T) |>
+     # distinct(ZKOD, CTVEREC, Crop, acsubst, .keep_all = T) |> 
+     unite("AS_rq", acsubst, rq_mean_river_seg_twa, sep = "|", remove = FALSE) |>
+     select(SHAPE_Leng, HYDROID, AS_rq) |>
+     nest("AS_rq" = AS_rq) |> 
+     ungroup() 
+   
+   river_cumRQ <- river_seg_mapinput |> 
+     select("SHAPE_Leng", "HYDROID", "rq_mean_river_seg_twa") |> 
+     aggregate(c("SHAPE_Leng", "HYDROID"), fun = "sum") |> 
+     mutate(sum_rq_mean_river_seg_twa = round(sum_rq_mean_river_seg_twa))
+
+# writeVector(conc_acsubst_river_seg_mapinput,
+#              paste0(district_name, "_", acsubst_name, "_riverwater.gpkg"),
+#              overwrite = T)
   
   # Save the results to an Excel file
-  write_excel_csv(conc_acsubst_river_seg_mapinput |> 
-             values(),
-           "Benesov_23chem_PEC56_riverwater.csv")
+  # write_excel_csv(conc_acsubst_river_seg_mapinput |> 
+  #            values(),
+  #          "Benesov_23chem_PEC56_riverwater.csv")
   
   # Save the results to an Excel file
-
-
-write_excel_csv(load_acsubst_farm_mapinput |>
-               select("acsubst",
-                      District,
-                      HYBAS_ID,
-                      "ZKOD",
-                      "CTVEREC", 
-                      "Crop",
-                      month,
-                      day,
-                      conc_acsubst_total_soil_ini, 
-                      conc_acsubst_total_soil_twa_g.kg) |> 
-             values(),
-           "Benesov_23chem_PEC56_topsoil.csv")
+# write_excel_csv(load_acsubst_farm_mapinput |>
+#                select("acsubst",
+#                       District,
+#                       HYBAS_ID,
+#                       "ZKOD",
+#                       "CTVEREC", 
+#                       "Crop",
+#                       month,
+#                       day,
+#                       conc_acsubst_total_soil_ini, 
+#                       conc_acsubst_total_soil_twa_g.kg) |> 
+#              values(),
+#            "Benesov_23chem_PEC56_topsoil.csv")
   
   # Keep unique rows
   # load_acsubst_farm<- srunoff_acsubst_farm[[1]] |> view()
@@ -1832,561 +1918,980 @@ write_excel_csv(load_acsubst_farm_mapinput |>
   #       .progress = T) |>
   #   vect()
     
-    ####################################################################
-    ########### END: Pesticide Runoff Model Schriever 2007 #############
-    ####################################################################
+####################################################################
+########### END: Pesticide Runoff Model Schriever 2007 #############
+####################################################################
     
-    ##########################################################
-    ########### START: Pesticide Runoff Map ##################
-    ##########################################################
+##########################################################
+########## START: Pesticide concentration Maps ###########
+##########################################################
     
-    sf_use_s2(F)
-    tmap_mode("plot")
+    for (as in seq_along(acsubst_name)) {
+      
+      # Prepare soil data
+      
+      soil_data <- soil_farm_mapinput |> 
+        filter(acsubst %in% acsubst_name[as]) |> 
+        mask(district_select)
+      
+      # Color palettes
+      # Soil concentration palette
+      
+      soil_pal <- colorBin(
+        palette = "BuPu",
+        domain = soil_data$conc_acsubst_total_soil_twa_g.kg,
+        bins = pretty(soil_data$conc_acsubst_total_soil_twa_g.kg),
+        na.color = "#ffdeaf",
+        reverse = T
+      )
+      
+      # Map title for AS concentration in soil
+      soil_conc_title <- paste0(
+        acsubst_name[as], " ",
+        conc_acsubst_soil_farm_mapinput$ndays |> unique(),
+        "-day PEC soil after 1x application in ",
+        app_month,
+        " ",
+        "(",
+        sim_yr,
+        ")",
+        " in ",
+        district_select$NAZ_LAU1,
+        " district"
+      )
+      
+      # AS concentration in topsoil
+      soil_as_conc <- leaflet() |>
+        addProviderTiles(
+          providers$Esri.WorldTopoMap,
+          options = providerTileOptions(opacity = 0.5)
+        ) |>
+        
+       # Add district borders
+       addPolylines(
+          data = district_select,
+          color = "black",
+          weight = 1.5,
+          opacity = 1,
+          fillOpacity = 0,
+          group = "District borders"
+        ) |>
+        
+       # Add soil concentration polygons
+       addPolygons(
+          data = soil_data,
+          fillColor = ~soil_pal(conc_acsubst_total_soil_twa_g.kg),
+          fillOpacity = 0.7,
+          color = "white",
+          weight = 0.2,
+          opacity = 1,
+          popup = ~paste0("<b>Field ID: </b>", "<b>", ZKOD, " (ZKOD)", ", ", CTVEREC, " (CTVEREC)", "</b>", "<br>",
+                          "<b>Crop: </b>", "<b>", Crop, "</b>", "<br>",
+            "<b>Concentration in topsoil (µg × kg⁻¹):</b><br>",
+            ifelse(is.na(conc_acsubst_total_soil_twa_g.kg), 
+                   "Missing values", 
+                   round(conc_acsubst_total_soil_twa_g.kg, 3))
+          ),
+          group = "AS concentration in soil"
+        ) |> 
+        
+      # Add layer controls
+      addLayersControl(
+        overlayGroups = c("District borders", "AS concentration in soil"),
+        options = layersControlOptions(collapsed = FALSE)
+      ) |>
+      
+      # Add legend
+      addLegend(
+        pal = soil_pal,
+        values = soil_data$conc_acsubst_total_soil_twa_g.kg,
+        title = "Concentration in soil<br>(time-weighted) (µg × kg⁻¹)",
+        group = "AS concentration in soil",
+        position = "bottomright",
+        opacity = 0.75,
+        na.label = "Missing values",
+        labFormat = labelFormat(between = " to ",
+                                digits = 2,
+                                transform = function(x=soil_data[,2] |> values()) sort(x, decreasing = T))
+      ) |>
+        
+      # Add scale bar
+      addScaleBar(position = "bottomleft") |>
+        
+      # Add title using custom HTML control
+      addControl(html = paste0("<div style='background-color: rgba(255, 255, 255, 0.9);
+                             padding: 6px 6px; border-radius: 4px; font-size: 14px; font-weight: bold; color: #333; max-width: 800px;
+                             line-height: 1.4;'>",
+                               soil_conc_title, 
+                                 "</div>"),
+                   position = "topleft") |> 
+        addControl(html = "", position = "bottomleft") %>%
+        htmlwidgets::onRender("
+    function(el, x) {
+      // Remove default zoom control if it exists
+      if (this._controlCorners) {
+        var existingZoom = this._controlCorners.topleft.querySelector('.leaflet-control-zoom');
+        if (existingZoom) {
+          existingZoom.remove();
+        }
+      }
+      
+      // Add zoom control to bottom left
+      var zoomControl = L.control.zoom({
+        position: 'bottomleft'
+      });
+      zoomControl.addTo(this);
+    }
+  ")
+      
+  saveWidget(soil_as_conc, file = paste0(dir_create(path_home_r(),
+                                                    "/Soil"),
+                                         "/", 
+                                                    paste0(district_select$NAZ_LAU1,
+                                                           "_",
+                                                           acsubst_name[as],
+                                                           "_PEC_soil_conc",
+                                                           ".html")), selfcontained = TRUE)
   
-    basemap_district <- tm_shape(district_select) +
-      tm_shape(district_select) +
-      tm_borders(col = "black",
-                 lty = "dashed",
-                 lwd = 0.75) +
-      tm_basemap("OpenTopoMap" , alpha = 0.5) +
-      # tmap_options(component.autoscale = T) +
-      tm_scalebar(position = c("right", "bottom"))
+  
+  # Soil RQ maps for individual AS
+  
+  # Define color palette function
+  # Using reversed Purple-Green scheme, skipping middle (white) color
+  # For the categories of risk, it is important to have a cut at 0.2 (defined as safe level - exposure must be 5 times lower than NOEC). So, the first three categories would be <0.2, ≥ 0.2, ≥ 1... then, it could be ≥ 2, ≥ 3, ≥ 4...
+  prg_colors <- rev(brewer.pal(11, "PRGn"))[c(2,3,4,7,8,9,10,11)]
+  
+  pal <- colorBin(
+    palette = prg_colors,
+    domain = soil_farm_mapinput$rq_acsubst_total_soil_twa,
+    bins = c(0, 0.2, 1, 2, 3, 5, 15)
+  )
+  
+  # Map title for AS RQ soil
+  soil_rq_title <- paste0(
+    acsubst_name[as], " ",
+    soil_data$ndays |> unique(),
+    "-day RQ soil after 1x application in ",
+    app_month,
+    " ",
+    "(",
+    sim_yr,
+    ")",
+    " in ",
+    district_select$NAZ_LAU1,
+    " district"
+  )
+  
+  # Create the leaflet map
+  soil_ind_rq_dist <- leaflet() |>
+    # Add OpenStreetMap tiles with transparency
+    addTiles(options = tileOptions(opacity = 0.5)) |>
     
-    layout_map <- tm_layout(frame = FALSE,
-                            legend.outside = TRUE,
-                            legend.outside.position = "right",
-                            legend.outside.size = 0.2,
-                            legend.text.size = 0.4,
-                            legend.title.size = 0.5,
-                            main.title.fontface = "bold"
-                            # main.title.size = 0.5
-                            )
+    # Add district borders
+    addPolylines(
+      data = district_select,
+      color = "black",
+      weight = 1.5,
+      opacity = 1,
+      fillOpacity = 0,
+      group = "District borders"
+    ) |>
     
-    # Create and save district dependent maps
-    ## Terrain slope
-    tslope_map <- basemap_district +
-      layout_map +
-      tm_shape(slope_cz_30as |> mask(district_select)) +
-      tm_raster("TerrainSlope_30as_cz", 
-                col_alpha = 0.85,
-                col.scale = tm_scale_continuous(values = "-brewer.rd_yl_gn"),
-                col.legend = tm_legend(title = "Terrain slope (median) (%)",
-                                       bg.color = "#f0f0f0",
-                                       bg.alpha = 0.75)) +
-      tm_title(paste0("Terrain slope in ",district_select$NAZ_LAU1,
-                      " district"),
-               size = 1) +
-      tm_add_legend(title = "District border",
-                    type = "lines",
-                    col = "black",
-                    lty = "dashed",
-                    lwd = 1) +
-      tm_shape(district_select) +
-      tm_borders(col = "black",
-                 lty = "dashed",
-                 lwd = 0.5)
-    
-    ## Save terrain slope maps
-    tmap_save(tslope_map,
-              paste0(district_name,
-                     "_terrain_slope_map.png"),
-              dpi = 600,
-              units = "cm",
-              width = 20,
-              height = 15)
-    
-    ## Organic carbon content
-    ocarb_map <- basemap_district +
-      layout_map +
-      tm_shape(orcarb_jrc_cz |> mask(district_select)) +
-      tm_raster("OC_jrc_CZ", 
-                col_alpha = 0.85,
-                col.scale = tm_scale_continuous(values = "-brewer.rd_yl_gn"),
-                col.legend = tm_legend(title = "Organic carbon (%)",
-                                       bg.color = "#f0f0f0",
-                                       bg.alpha = 0.75)) +
-      tm_title(paste0("Topsoil organic carbon content in ",district_select$NAZ_LAU1,
-                      " district"),
-               size = 1) +
-      tm_add_legend(title = "District border",
-                    type = "lines",
-                    col = "black",
-                    lty = "dashed",
-                    lwd = 1) +
-      tm_shape(district_select) +
-      tm_borders(col = "black",
-                 lty = "dashed",
-                 lwd = 0.5)
-    
-    ## Save Organic carbon content map
-    tmap_save(ocarb_map,
-              paste0(district_name,
-                     "_ocarb_map.png"),
-              dpi = 600,
-              units = "cm",
-              width = 20,
-              height = 15)
-    
-    ## Sand content
-    sand_map <-basemap_district +
-      layout_map +
-      tm_shape(sand_jrc_cz |> mask(district_select)) +
-      tm_raster("sand_jrc_CZ", 
-                col_alpha = 0.85,
-                col.scale = tm_scale_continuous(values = "-brewer.rd_yl_gn"),
-                col.legend = tm_legend(title = "Sand (%)",
-                                       bg.color = "#f0f0f0",
-                                       bg.alpha = 0.75)) +
-      tm_title(paste0("Topsoil sand content in ",district_select$NAZ_LAU1,
-                      " district"),
-               size = 1) +
-      tm_add_legend(title = "District border",
-                    type = "lines",
-                    col = "black",
-                    lty = "dashed",
-                    lwd = 1) +
-      tm_shape(district_select) +
-      tm_borders(col = "black",
-                 lty = "dashed",
-                 lwd = 0.5)
-    
-    ## Save Sand content map
-    tmap_save(sand_map,
-              paste0(district_name,
-                     "_sand_map.png"),
-              dpi = 600,
-              units = "cm",
-              width = 20,
-              height = 15)
-    
-    ## Bulk soil density map
-    bdens_map <-basemap_district +
-      layout_map +
-      tm_shape(budens_jrc_cz|> mask(district_select)) +
-      tm_raster("budens_jrc_CZ", 
-                col_alpha = 0.85,
-                col.scale = tm_scale_continuous(values = "-brewer.rd_yl_gn"),
-                col.legend = tm_legend(title = "Soil bulk density (kg\u00D7dm\u207B\u00B3)",
-                                       bg.color = "#f0f0f0",
-                                       bg.alpha = 0.75)) +
-      tm_title(paste0("Topsoil bulk density in ",district_select$NAZ_LAU1,
-                      " district"),
-               size = 1) +
-      tm_add_legend(title = "District border",
-                    type = "lines",
-                    col = "black",
-                    lty = "dashed",
-                    lwd = 1) +
-      tm_shape(district_select) +
-      tm_borders(col = "black",
-                 lty = "dashed",
-                 lwd = 0.5)
-    
-    ## Save Bulk soil density map
-    tmap_save(bdens_map,
-              paste0(district_name,
-                     "_bdens_map.png"),
-              dpi = 600,
-              units = "cm",
-              width = 20,
-              height = 15)
-    
-    ## Precipitation map
-    
-    prec_map <- basemap_district +
-      layout_map +
-      tm_shape(disagg(rasterize(basins_cz_distr|>
-                                  select(pre_mm_uyr), rast(basins_cz_distr), "pre_mm_uyr", touches = T), fact=c(100, 100)) |>
-                 mask(district_select)) +
-      tm_raster("pre_mm_uyr", 
-                col_alpha = 0.85,
-                col.scale = tm_scale_continuous(values = "brewer.bu_pu"),
-                col.legend = tm_legend(title = "Precipitation (mm)",
-                                       bg.color = "#f0f0f0",
-                                       bg.alpha = 0.75)) +
-      tm_title(paste0("Annual precipitation in ",district_select$NAZ_LAU1,
-                      " district"),
-               size = 1) +
-      tm_add_legend(title = "District border",
-                    type = "lines",
-                    col = "black",
-                    lty = "dashed",
-                    lwd = 1) 
-      tm_shape(district_select) +
-      tm_borders(col = "black",
-                 lty = "dashed",
-                 lwd = 0.5)
-    
-    ## Save preciptation map
-    tmap_save(prec_map,
-              paste0(district_name,
-                     "_prec_map.png"),
-              dpi = 600,
-              units = "cm",
-              width = 20,
-              height = 15)
-    
-    ## River discharge map
-    dis_map <- basemap_district +
-      layout_map +
-      tm_shape(rivers_basin_buff_seg |> select(dis_m3_pyr)) +
-      tm_polygons("dis_m3_pyr", 
-                  fill.scale = tm_scale_continuous(values = "brewer.bu_pu"),
-                  fill.legend = tm_legend(title = "Discharge (mean) (m\u00B3)",
-                                          bg.color = "#f0f0f0",
-                                          bg.alpha = 0.75),
-                  lwd= 0) +
-      tm_title(paste0("Annual river discharge in ",district_select$NAZ_LAU1,
-                      " district"),
-               size = 1) +
-      tm_add_legend(title = "District border",
-                    type = "lines",
-                    col = "black",
-                    lty = "dashed",
-                    lwd = 1) +
-      tm_shape(district_select) +
-      tm_borders(col = "black",
-                 lty = "dashed",
-                 lwd = 0.5)
-    
-    ## Save river discharge map
-    tmap_save(dis_map,
-              paste0(district_name,
-                     "_dis_map.png"),
-              dpi = 600,
-              units = "cm",
-              width = 20,
-              height = 15)
-    
+    # Add soil RQ polygons
+    addPolygons(
+      data = soil_data,
+      fillColor = ~pal(rq_acsubst_total_soil_twa),
+      fillOpacity = 0.7,
+      color = "black",
+      weight = 0.5,
+      opacity = 0.75,
+      popup = ~paste0("<b>Field ID: </b>", "<b>", ZKOD, " (ZKOD)", ", ", CTVEREC, " (CTVEREC)", "</b>", "<br>",
+                      "<b>Crop: </b>", "<b>", Crop, "</b>", "<br>",
+                      "<b>Individual RQ soil: </b>", "<b><i>", rq_acsubst_total_soil_twa, "</b></i>", "<br>"),
+      group = "Individual RQ soil"
+    ) |>
+      
+      # Add layer controls
+      addLayersControl(
+        overlayGroups = c("District borders", "Individual RQ soil"),
+        options = layersControlOptions(collapsed = FALSE)
+      ) |>
+      
+      # Add scale bar
+      addScaleBar(position = "bottomright") |> 
+      
+      # Add custom legend
+      addLegend(
+        colors = prg_colors,
+        labels = c("\u003c 0.2", "\u2265 0.2", "\u003c 1", "\u2265 1", "\u2265 2", "\u2265 3", "\u2265 4", "\u2265 5"),
+        title = "Individual RQ soil",
+        position = "bottomright",
+        group = "Individual RQ soil",
+        opacity = 1
+      ) |> 
+      addControl(html = paste0("<div style='background-color: rgba(255, 255, 255, 0.9);
+                             padding: 6px 6px; border-radius: 4px; font-size: 14px; font-weight: bold; color: #333; max-width: 800px;
+                             line-height: 1.4;'>",
+                               soil_rq_title, 
+                               "</div>"),
+                 position = "topleft") |> 
+      addControl(html = "", position = "bottomleft") %>%
+      htmlwidgets::onRender("
+    function(el, x) {
+      // Remove default zoom control if it exists
+      if (this._controlCorners) {
+        var existingZoom = this._controlCorners.topleft.querySelector('.leaflet-control-zoom');
+        if (existingZoom) {
+          existingZoom.remove();
+        }
+      }
+      
+      // Add zoom control to bottom left
+      var zoomControl = L.control.zoom({
+        position: 'bottomleft'
+      });
+      zoomControl.addTo(this);
+    }
+  ")
+  
+  saveWidget(soil_ind_rq_dist, file = paste0(dir_create(path_home_r(),
+                                                    "/Soil"),
+                                         "/", 
+                                         paste0(district_select$NAZ_LAU1,
+                                                "_",
+                                                acsubst_name[as],
+                                                "_RQ_soil_conc",
+                                                ".html")), selfcontained = TRUE)
+  
+  # River water RQ maps for individual AS
+  
+  # Prepare river water data
+  river_data <- river_seg_mapinput |>
+    filter(acsubst %in% acsubst_name[as])
 
-for (as in seq_along(acsubst_name)) {
+    # River water concentration palette
+  river_pal <- colorNumeric(
+    palette = "BuPu",
+    domain = river_seg_mapinput$conc_mean_river_seg,
+    na.color = "#ffdeaf"
+  )
 
-  # Create chemical and district dependent maps
+    # Map title for river water
+  river_conc_title <- paste0(
+    acsubst_name[as], " ",
+    river_seg_mapinput$ndays |> max(),
+    "-day PEC surface water after 1x application in ",
+    app_month,
+    " ",
+    "(",
+    sim_yr,
+    ")",
+    " in ",
+    district_select$NAZ_LAU1,
+    " district"
+  )
+  
+  # AS concentration in river water
+  river_as_conc <- leaflet() |>
+    addProviderTiles(
+      providers$Esri.WorldTopoMap,
+      options = providerTileOptions(opacity = 0.5)
+    ) |>
+    
+    # Add district borders
+    addPolylines(
+      data = district_select,
+      color = "black",
+      weight = 1.5,
+      opacity = 1,
+      fillOpacity = 0,
+      group = "District borders"
+    ) |>
+    
+    # Add river water concentration polygons
+    addPolygons(
+      data = river_data,
+      fillColor = ~river_pal(conc_mean_river_seg),
+      fillOpacity = 0.7,
+      color = "white",
+      weight = 0.2,
+      opacity = 1,
+      popup = ~paste0("<b>River segment ID: </b>", "<b>", HYDROID, "</b><br>",
+                      "<b>Concentration in surface water (\u00B5g\u00D7dm\u207B\u00B3):</b><br>",
+                      ifelse(is.na(conc_mean_river_seg), 
+                             "Missing values", 
+                             round(conc_mean_river_seg, 3))
+      ),
+      group = "AS concentration in river water"
+    ) |> 
+    
+    # Add layer controls
+    addLayersControl(
+      overlayGroups = c("District borders", "AS concentration in river water"),
+      options = layersControlOptions(collapsed = FALSE)
+    ) |>
+    
+    # Add legend
+    addLegend(
+      pal = river_pal,
+      values = river_data$conc_mean_river_seg,
+      title = "Concentration in river water<br>(time-weighted) (\u00B5g\u00D7dm\u207B\u00B3)",
+      group = "AS concentration in river water",
+      position = "bottomright",
+      opacity = 0.75,
+      na.label = "Missing values",
+      labFormat = labelFormat(between = " to ",
+                              digits = 2,
+                              transform = function(x=river_data$conc_mean_river_seg |> values()) sort(x, decreasing = T))
+    ) |>
+    
+    # Add scale bar
+    addScaleBar(position = "bottomleft") |>
+    
+    # Add title using custom HTML control
+    addControl(html = paste0("<div style='background-color: rgba(255, 255, 255, 0.9);
+                             padding: 6px 6px; border-radius: 4px; font-size: 14px; font-weight: bold; color: #333; max-width: 800px;
+                             line-height: 1.4;'>",
+                             river_conc_title, 
+                             "</div>"),
+               position = "topleft") |> 
+    addControl(html = "", position = "bottomleft") %>%
+    htmlwidgets::onRender("
+    function(el, x) {
+      // Remove default zoom control if it exists
+      if (this._controlCorners) {
+        var existingZoom = this._controlCorners.topleft.querySelector('.leaflet-control-zoom');
+        if (existingZoom) {
+          existingZoom.remove();
+        }
+      }
+      
+      // Add zoom control to bottom left
+      var zoomControl = L.control.zoom({
+        position: 'bottomleft'
+      });
+      zoomControl.addTo(this);
+    }
+  ")
+  
+  saveWidget(river_as_conc, file = paste0(dir_create(path_home_r(),
+                                                    "/Surface water"),
+                                         "/", 
+                                         paste0(district_select$NAZ_LAU1,
+                                                "_",
+                                                acsubst_name[as],
+                                                "_PEC_river_conc",
+                                                ".html")), selfcontained = TRUE)
+      
+  }
+   
+   # Cumulative RQ soil map
+
+   # Define color palette function
+   # Using reversed Purple-Green scheme, skipping middle (white) color
+   # For the categories of risk, it is important to have a cut at 0.2 (defined as safe level - exposure must be 5 times lower than NOEC). So, the first three categories would be <0.2, ≥ 0.2, ≥ 1... then, it could be ≥ 2, ≥ 3, ≥ 4...
+   prg_colors <- rev(brewer.pal(11, "PRGn"))[c(2,3,4,7,8,9,10,11)]
+   
+   pal <- colorBin(
+     palette = prg_colors,
+     domain = soil_RQ_all$sum_rq_acsubst_total_soil_twa,
+     bins = c(0, 0.2, 1, 2, 3, 5, 15)
+   )
+   # Create the leaflet map
+   soil_cum_rq_dist <- leaflet() |>
+     # Add OpenStreetMap tiles with transparency
+     addTiles(options = tileOptions(opacity = 0.5)) |>
+     
+     # Add district borders
+     addPolylines(
+       data = district_select,
+       color = "black",
+       weight = 1.5,
+       opacity = 1,
+       fillOpacity = 0,
+       group = "District borders"
+     ) |>
+     
+     # Add soil RQ polygons
+     addPolygons(
+       data = soil_RQ_all,
+       fillColor = ~pal(sum_rq_acsubst_total_soil_twa),
+       fillOpacity = 0.7,
+       color = "black",
+       weight = 0.5,
+       opacity = 0.75,
+       popup = ~paste0("<b>Field ID: </b>", "<b>", ZKOD, " (ZKOD)", ", ", CTVEREC, " (CTVEREC)", "</b>", "<br>",
+                       "<b>Crop: </b>", "<b>", Crop, "</b>", "<br>",
+                       "<b>Cumulative RQ soil: </b>", "<b><i>", sum_rq_acsubst_total_soil_twa, "</b></i>", "<br>",
+                       "<b>Number of AS used: </b>","<b>", agg_n, "</b>", "<br>",
+                       "<b>Top contributors (RQ \u003e 0.01):</b>" ,"<br>", AS_rq),
+       group = "Cumulative RQ soil"
+     ) |>
+     
+     # Add layer controls
+     addLayersControl(
+       overlayGroups = c("District borders", "Cumulative RQ soil"),
+       options = layersControlOptions(collapsed = FALSE)
+     ) |>
+     
+     # Add scale bar
+     addScaleBar(position = "bottomright") |> 
+     
+     # Add custom legend
+     addLegend(
+       colors = prg_colors,
+       labels = c("\u003c 0.2", "\u2265 0.2", "\u003c 1", "\u2265 1", "\u2265 2", "\u2265 3", "\u2265 4", "\u2265 5"),
+       title = "Cumulative RQ soil",
+       position = "bottomright",
+       group = "Cumulative RQ soil",
+       opacity = 1
+     ) |> 
+     addControl(html = paste0("<div style='background-color: rgba(255, 255, 255, 0.9);
+                             padding: 6px 6px; border-radius: 4px; font-size: 14px; font-weight: bold; color: #333; max-width: 800px;
+                             line-height: 1.4;'>",
+                              "Cumulative soil earthworm RQ from 56-day averaged exposure following 1x July application", 
+                              "</div>"),
+                position = "topleft") |> 
+     addControl(html = "", position = "bottomleft") %>%
+     htmlwidgets::onRender("
+    function(el, x) {
+      // Remove default zoom control if it exists
+      if (this._controlCorners) {
+        var existingZoom = this._controlCorners.topleft.querySelector('.leaflet-control-zoom');
+        if (existingZoom) {
+          existingZoom.remove();
+        }
+      }
+      
+      // Add zoom control to bottom left
+      var zoomControl = L.control.zoom({
+        position: 'bottomleft'
+      });
+      zoomControl.addTo(this);
+    }
+  ")
+   
+   saveWidget(soil_cum_rq_dist, paste0(district_select, "_RQcum_soil.html"))
+}    
+      
+#################################################################
+########## END: Pesticide concentration and risk maps ###########
+#################################################################
+  
+  # Plots using tmap package need to be converted to leaflet for interactive viewing
+  # and saved as hmtl files for reporting 
+  
+  # sf_use_s2(F)
+  # tmap_mode("view")
+  
+  # basemap_district <- tm_shape(district_select) +
+  #   tm_shape(district_select) +
+  #   tm_borders(col = "black",
+  #              lty = "dashed",
+  #              lwd = 0.75) +
+  #   tm_basemap("Esri.WorldTopoMap", alpha = 0.5) +
+  #   # tmap_options(component.autoscale = T) +
+  #   tm_scalebar(position = c("right", "bottom"))
+  # 
+  # layout_map <- tm_layout(frame = FALSE,
+  #                         legend.outside = TRUE,
+  #                         legend.outside.position = "right",
+  #                         legend.outside.size = 0.2,
+  #                         legend.text.size = 0.4,
+  #                         legend.title.size = 0.5,
+  #                         main.title.fontface = "bold"
+  #                         # main.title.size = 0.5
+  #                         )
+  
+  # Create and save district dependent maps
+  ## Terrain slope
+  # tslope_map <- basemap_district +
+  #   layout_map +
+  #   tm_shape(slope_cz_30as |> mask(district_select)) +
+  #   tm_raster("TerrainSlope_30as_cz", 
+  #             col_alpha = 0.85,
+  #             col.scale = tm_scale_continuous(values = "-brewer.rd_yl_gn"),
+  #             col.legend = tm_legend(title = "Terrain slope (median) (%)",
+  #                                    bg.color = "#f0f0f0",
+  #                                    bg.alpha = 0.75)) +
+  #   tm_title(paste0("Terrain slope in ",district_select$NAZ_LAU1,
+  #                   " district"),
+  #            size = 1) +
+  #   tm_add_legend(title = "District border",
+  #                 type = "lines",
+  #                 col = "black",
+  #                 lty = "dashed",
+  #                 lwd = 1) +
+  #   tm_shape(district_select) +
+  #   tm_borders(col = "black",
+  #              lty = "dashed",
+  #              lwd = 0.5)
+  
+  ## Save terrain slope maps
+  # tmap_save(tslope_map,
+  #           paste0(district_name,
+  #                  "_terrain_slope_map.png"),
+  #           dpi = 600,
+  #           units = "cm",
+  #           width = 20,
+  #           height = 15)
+  
+  ## Organic carbon content
+  # ocarb_map <- basemap_district +
+  #   layout_map +
+  #   tm_shape(orcarb_jrc_cz |> mask(district_select)) +
+  #   tm_raster("OC_jrc_CZ", 
+  #             col_alpha = 0.85,
+  #             col.scale = tm_scale_continuous(values = "-brewer.rd_yl_gn"),
+  #             col.legend = tm_legend(title = "Organic carbon (%)",
+  #                                    bg.color = "#f0f0f0",
+  #                                    bg.alpha = 0.75)) +
+  #   tm_title(paste0("Topsoil organic carbon content in ",district_select$NAZ_LAU1,
+  #                   " district"),
+  #            size = 1) +
+  #   tm_add_legend(title = "District border",
+  #                 type = "lines",
+  #                 col = "black",
+  #                 lty = "dashed",
+  #                 lwd = 1) +
+  #   tm_shape(district_select) +
+  #   tm_borders(col = "black",
+  #              lty = "dashed",
+  #              lwd = 0.5)
+  
+  ## Save Organic carbon content map
+  # tmap_save(ocarb_map,
+  #           paste0(district_name,
+  #                  "_ocarb_map.png"),
+  #           dpi = 600,
+  #           units = "cm",
+  #           width = 20,
+  #           height = 15)
+  
+  ## Sand content
+  # sand_map <-basemap_district +
+  #   layout_map +
+  #   tm_shape(sand_jrc_cz |> mask(district_select)) +
+  #   tm_raster("sand_jrc_CZ", 
+  #             col_alpha = 0.85,
+  #             col.scale = tm_scale_continuous(values = "-brewer.rd_yl_gn"),
+  #             col.legend = tm_legend(title = "Sand (%)",
+  #                                    bg.color = "#f0f0f0",
+  #                                    bg.alpha = 0.75)) +
+  #   tm_title(paste0("Topsoil sand content in ",district_select$NAZ_LAU1,
+  #                   " district"),
+  #            size = 1) +
+  #   tm_add_legend(title = "District border",
+  #                 type = "lines",
+  #                 col = "black",
+  #                 lty = "dashed",
+  #                 lwd = 1) +
+  #   tm_shape(district_select) +
+  #   tm_borders(col = "black",
+  #              lty = "dashed",
+  #              lwd = 0.5)
+  
+  ## Save Sand content map
+  # tmap_save(sand_map,
+  #           paste0(district_name,
+  #                  "_sand_map.png"),
+  #           dpi = 600,
+  #           units = "cm",
+  #           width = 20,
+  #           height = 15)
+  
+  ## Bulk soil density map
+  # bdens_map <-basemap_district +
+  #   layout_map +
+  #   tm_shape(budens_jrc_cz|> mask(district_select)) +
+  #   tm_raster("budens_jrc_CZ", 
+  #             col_alpha = 0.85,
+  #             col.scale = tm_scale_continuous(values = "-brewer.rd_yl_gn"),
+  #             col.legend = tm_legend(title = "Soil bulk density (kg\u00D7dm\u207B\u00B3)",
+  #                                    bg.color = "#f0f0f0",
+  #                                    bg.alpha = 0.75)) +
+  #   tm_title(paste0("Topsoil bulk density in ",district_select$NAZ_LAU1,
+  #                   " district"),
+  #            size = 1) +
+  #   tm_add_legend(title = "District border",
+  #                 type = "lines",
+  #                 col = "black",
+  #                 lty = "dashed",
+  #                 lwd = 1) +
+  #   tm_shape(district_select) +
+  #   tm_borders(col = "black",
+  #              lty = "dashed",
+  #              lwd = 0.5)
+  
+  ## Save Bulk soil density map
+  # tmap_save(bdens_map,
+  #           paste0(district_name,
+  #                  "_bdens_map.png"),
+  #           dpi = 600,
+  #           units = "cm",
+  #           width = 20,
+  #           height = 15)
+  
+  ## Precipitation map
+  
+  # prec_map <- basemap_district +
+  #   layout_map +
+  #   tm_shape(disagg(rasterize(basins_cz_distr|>
+  #                               select(pre_mm_uyr), rast(basins_cz_distr), "pre_mm_uyr", touches = T), fact=c(100, 100)) |>
+  #              mask(district_select)) +
+  #   tm_raster("pre_mm_uyr", 
+  #             col_alpha = 0.85,
+  #             col.scale = tm_scale_continuous(values = "brewer.bu_pu"),
+  #             col.legend = tm_legend(title = "Precipitation (mm)",
+  #                                    bg.color = "#f0f0f0",
+  #                                    bg.alpha = 0.75)) +
+  #   tm_title(paste0("Annual precipitation in ",district_select$NAZ_LAU1,
+  #                   " district"),
+  #            size = 1) +
+  #   tm_add_legend(title = "District border",
+  #                 type = "lines",
+  #                 col = "black",
+  #                 lty = "dashed",
+  #                 lwd = 1) 
+  #   tm_shape(district_select) +
+  #   tm_borders(col = "black",
+  #              lty = "dashed",
+  #              lwd = 0.5)
+  
+  ## Save preciptation map
+  # tmap_save(prec_map,
+  #           paste0(district_name,
+  #                  "_prec_map.png"),
+  #           dpi = 600,
+  #           units = "cm",
+  #           width = 20,
+  #           height = 15)
+  
+  ## River discharge map
+  # dis_map <- basemap_district +
+  #   layout_map +
+  #   tm_shape(rivers_basin_buff_seg |> select(dis_m3_pyr)) +
+  #   tm_polygons("dis_m3_pyr", 
+  #               fill.scale = tm_scale_continuous(values = "brewer.bu_pu"),
+  #               fill.legend = tm_legend(title = "Discharge (mean) (m\u00B3)",
+  #                                       bg.color = "#f0f0f0",
+  #                                       bg.alpha = 0.75),
+  #               lwd= 0) +
+  #   tm_title(paste0("Annual river discharge in ",district_select$NAZ_LAU1,
+  #                   " district"),
+  #            size = 1) +
+  #   tm_add_legend(title = "District border",
+  #                 type = "lines",
+  #                 col = "black",
+  #                 lty = "dashed",
+  #                 lwd = 1) +
+  #   tm_shape(district_select) +
+  #   tm_borders(col = "black",
+  #              lty = "dashed",
+  #              lwd = 0.5)
+  
+  ## Save river discharge map
+  # tmap_save(dis_map,
+  #           paste0(district_name,
+  #                  "_dis_map.png"),
+  #           dpi = 600,
+  #           units = "cm",
+  #           width = 20,
+  #           height = 15)
+  
+  # Create chemical- and district- dependent concentration maps
   ## Crop map
-  crop_map <- basemap_district +
-    layout_map +
-    tm_shape(gemap_loc |> filter(acsubst %in% acsubst_name[as]) |> mask(district_select)) +
-    tm_polygons("Crop",
-                fill.scale = tm_scale_categorical(value.na = "#ffdeaf" ,
-                                                  label.na = "Missing values",
-                                                  values = "poly.palette36"),
-                fill.legend = tm_legend(title = "Crop name",
-                                        bg.color = "#f0f0f0",
-                                        bg.alpha = 0.75),
-                lwd = 0.2) +
-    tm_title(paste0("Crops treated with ",
-                    acsubst_name[as] |> str_to_lower(),
-                    " in ",
-                    district_select$NAZ_LAU1,
-                    " district"),
-             size = 1) +
-    tm_add_legend(title = "District border",
-                  type = "lines",
-                  col = "black",
-                  lty = "dashed",
-                  lwd = 1) 
-
-    ## AS application rate map
-    apprate_as_map <- basemap_district +
-      layout_map +
-      tm_shape(acsubst_application_basin_distr |> filter(acsubst %in% acsubst_name[as]) |> mask(district_select)) +
-      tm_polygons("aprate_farm_g.ha",
-                  fill.scale = tm_scale_continuous(value.na = "#ffdeaf" ,
-                                                    label.na = "Missing values",
-                                                    values = "brewer.bu_pu"),
-                  fill.legend = tm_legend(title = "Application rate (g\u00D7ha\u207B\u00B9)",
-                                          bg.color = "#f0f0f0",
-                                          bg.alpha = 0.75),
-                  lwd = 0.2) +
-      tm_title(paste0(acsubst_name[as]," application rate in ",
-                      district_name,
-                      " district"),
-               size = 1) +
-      tm_add_legend(title = "District border",
-                    type = "lines",
-                    col = "black",
-                    lty = "dashed",
-                    lwd = 1) 
-    
-    ## Map showing AS concentration in topsoil map
-    soil_as_conc <- basemap_district +
-      layout_map +
-      tm_shape(load_acsubst_farm_mapinput |> filter(acsubst %in% acsubst_name[as]) |> mask(district_select)) +
-      tm_polygons("conc_acsubst_total_soil_twa_g.kg",
-                  fill.scale = tm_scale_continuous(value.na = "#ffdeaf" ,
-                                                   label.na = "Missing values",
-                                                   values = "brewer.bu_pu"),
-                  fill.legend = tm_legend(title = "Concentration in topsoil\n(time-weighted) (\u00B5g \u00D7 kg\u207B\u00B9)",
-                                          bg.color = "#f0f0f0",
-                                          bg.alpha = 0.75),
-                  lwd = 0.2) +
-      tm_title(paste0(acsubst_name[as]," ",
-                      meteo_stations_prec_basins$day |> max(),
-                      "-day",
-                      " PEC topsoil after 1x application in ",
-                      meteo_stations_prec_basins$month |> unique(),
-                      " in ",
-                      district_select$NAZ_LAU1,
-                      " district"),
-               size = 1) +
-      tm_add_legend(title = "District border",
-                    type = "lines",
-                    col = "black",
-                    lty = "dashed",
-                    lwd = 1)  
+  # crop_map <- basemap_district +
+  #   layout_map +
+  #   tm_shape(gemap_loc |> filter(acsubst %in% acsubst_name[as]) |> mask(district_select)) +
+  #   tm_polygons("Crop",
+  #               fill.scale = tm_scale_categorical(value.na = "#ffdeaf" ,
+  #                                                 label.na = "Missing values",
+  #                                                 values = "poly.palette36"),
+  #               fill.legend = tm_legend(title = "Crop name",
+  #                                       bg.color = "#f0f0f0",
+  #                                       bg.alpha = 0.75),
+  #               lwd = 0.2) +
+  #   tm_title(paste0("Crops treated with ",
+  #                   acsubst_name[as] |> str_to_lower(),
+  #                   " in ",
+  #                   district_select$NAZ_LAU1,
+  #                   " district"),
+  #            size = 1) +
+  #   tm_add_legend(title = "District border",
+  #                 type = "lines",
+  #                 col = "black",
+  #                 lty = "dashed",
+  #                 lwd = 1) 
   
-    ## Map showing AS concentration in water
-    riverwater_as_conc <- basemap_district +
-      layout_map +
-      tm_shape(rivers_basin) +
-      # tm_lines(col = "blue",
-      #          lwd = 0.5) +
-      tm_shape(rivers_basin_buff_seg) +
-      tm_polygons(fill_alpha = 0.75,
-                  fill = "skyblue1",
-                  lwd = 0,
-                  col = "skyblue1") +
-      tm_shape(rivers_basin_buff_seg[c("HYDROID", "NAMN1")] |>
-                 merge(conc_acsubst_river_seg_mapinput) |>
-                 filter(acsubst %in% acsubst_name[as]) |>
-                 mask(district_select)) +
-      tm_polygons("conc_mean_river_seg",
-                  fill.scale = tm_scale_continuous(value.na = "#ffdeaf" ,
-                                                   label.na = "#ffdeaf",
-                                                   values = "brewer.bu_pu"),
-                  fill.legend = tm_legend(title = "Concentration in river water\n(mean) (\u00B5g \u00D7 dm\u207B\u00B3)",
-                                          bg.color = "#f0f0f0",
-                                          bg.alpha = 0.75),
-                  lwd = 0) +
-      tm_title(paste0(acsubst_name[as]," ",
-                      meteo_stations_prec_basins$day |> max(),
-                      "-day",
-                      " PEC surface water after 1x application in ",
-                     meteo_stations_prec_basins$month |> unique(),
-                     " in ",
-                     district_select$NAZ_LAU1,
-                     " district"),
-               size = 1) +
-      tm_add_legend(title = "District border",
-                    type = "lines",
-                    col = "black",
-                    lty = "dashed",
-                    lwd = 1) +
-      # tm_add_legend(title = "River network (CUZK)",
-                    # type = "lines",
-                    # col = "blue",
-                    # lwd = 1) +
-      tm_add_legend(title = paste0(rivbuff_width, " m river buffer"),
-                    type = "polygons",
-                    fill = "skyblue1",
-                    fill_alpha = 0.75,
-                    lwd = 0)
+  ## AS application rate map
+  # apprate_as_map <- basemap_district +
+  #   layout_map +
+  #   tm_shape(acsubst_application_basin_distr |> filter(acsubst %in% acsubst_name[as]) |> mask(district_select)) +
+  #   tm_polygons("aprate_farm_g.ha",
+  #               fill.scale = tm_scale_continuous(value.na = "#ffdeaf" ,
+  #                                                 label.na = "Missing values",
+  #                                                 values = "brewer.bu_pu"),
+  #               fill.legend = tm_legend(title = "Application rate (g\u00D7ha\u207B\u00B9)",
+  #                                       bg.color = "#f0f0f0",
+  #                                       bg.alpha = 0.75),
+  #               lwd = 0.2) +
+  #   tm_title(paste0(acsubst_name[as]," application rate in ",
+  #                   district_name,
+  #                   " district"),
+  #            size = 1) +
+  #   tm_add_legend(title = "District border",
+  #                 type = "lines",
+  #                 col = "black",
+  #                 lty = "dashed",
+  #                 lwd = 1) 
+  
+  # Save chemical and district dependent maps
+  ## Save Crop map
+  # tmap_save(crop_map,
+  #           paste0(district_name,
+  #                  "_",
+  #                  acsubst_name[as],
+  #                  "_crop_map.png"),
+  #           dpi = 600,
+  #           units = "cm",
+  #           width = 20,
+  #           height = 15)
+  # 
+  # tmap_save(apprate_as_map,
+  #           paste0(district_name,
+  #                  "_",
+  #                  acsubst_name[as],
+  #                  "_apprate_map.png"),
+  #           dpi = 600,
+  #           units = "cm",
+  #           width = 20,
+  #           height = 15)
 
-    # Save chemical and district dependent maps
-    ## Save Crop map
-    tmap_save(crop_map,
-              paste0(district_name,
-                     "_",
-                     acsubst_name[as],
-                     "_crop_map.png"),
-              dpi = 600,
-              units = "cm",
-              width = 20,
-              height = 15)
-    
-    tmap_save(apprate_as_map,
-              paste0(district_name,
-                     "_",
-                     acsubst_name[as],
-                     "_apprate_map.png"),
-              dpi = 600,
-              units = "cm",
-              width = 20,
-              height = 15)
-    
-    tmap_save(soil_as_conc,
-              paste0(district_select$NAZ_LAU1,
-                     "_",
-                     acsubst_name[as],
-                     "_PECsoil_map.png"),
-              dpi = 600,
-              units = "cm",
-              width = 20,
-              height = 15)
-    
-    tmap_save(riverwater_as_conc,
-              paste0(district_name,
-                     "_",
-                     acsubst_name[as],
-                     "_PECsw_map.png"),
-              dpi = 600,
-              units = "cm",
-              width = 20,
-              height = 15)
+# ASs <- c("Acetamiprid", "Tebuconazole", "Glyphosate")
 
-  }
- 
-    ########################################################
-    ########### END: Pesticide Runoff Map ##################
-    ########################################################
-
-  }
-}
-
-ASs <- c("Acetamiprid", "Tebuconazole", "Glyphosate")
-
-AS_statmap_topsoil_riverwater("Benešov", acsubst_name = ASs, "July", 1, 30, 100)
+# AS_statmap_topsoil_riverwater("Benešov", acsubst_name = ASs, "July", 1, 30, 100)
 
 # AS RQ for soil map
 
-rq_map <- function(ASs, district){
+# rq_map <- function(ASs, district){
+#   
+#   soil_rq_map <- dir_ls(path_home_r(),
+#                         recurse = T,
+#                         regexp = "CZdistricts_topsoil_3chem_farm_RQ.gpkg") |>
+#     vect() 
+#   
+#   sf_use_s2(F)
+#   tmap_mode("view")
+#   
+#   rq_dist <- tm_shape(RCzechia::okresy() |> filter(NAZ_LAU1 == district),
+#                       name = "District borders") +
+#     tm_borders(col = "black",
+#                lwd = 1.5) +
+#     tm_shape(soil_rq_map |>
+#                filter(acsubst == ASs | District == district) |>
+#                select(RQ, acsubst) |>
+#                mask(vect(RCzechia::okresy() |> 
+#                            filter(NAZ_LAU1 == district)))) +
+#     tm_polygons("RQ",
+#                 popup.vars = c("RQ topsoil" = "RQ"),
+#                 fill.scale = tm_scale_intervals(value.na = "#ffdeaf",
+#                                                 label.na = "Missing values",
+#                                                 style = "fixed",
+#                                                 breaks = c(0:3),
+#                                                 labels = c("<1", "1", ">1"),
+#                                                 values = "-brewer.prgn",
+#                                                 midpoint = 1),
+#                 fill.legend = tm_legend(title = "RQ topsoil",
+#                                         bg.color = "#f0f0f0",
+#                                         bg.alpha = 1),
+#                 lwd = 0.75,
+#                 group = "RQ topsoil for individual fields",
+#                 group.control = "check") +
+#     tm_title(paste0(RCzechia::okresy()[,3] |>
+#                       filter(NAZ_LAU1 == district) |>
+#                       st_drop_geometry() |> 
+#                       unique(),
+#                     ": 30-day ",
+#                     soil_rq_map |>
+#                       select(acsubst) |> 
+#                       filter(acsubst == ASs) |> 
+#                       values() |> 
+#                       unique(),
+#                    " topsoil risk quotient (RQ topsoil) following 1x application in July.")) +
+#     # tm_scalebar(position = c("right", "bottom")) +
+#     tm_basemap("Esri.WorldTopoMap", alpha = 0.5, group.control = "check")
+#   
+#   tmap_save(rq_dist,
+#             paste0(RCzechia::okresy()[,3] |>
+#                     filter(NAZ_LAU1 == district) |>
+#                     st_drop_geometry() |> 
+#                     unique(),
+#                   "_",
+#                   soil_rq_map |>
+#                     select(acsubst) |> 
+#                     filter(acsubst == ASs) |> 
+#                       values() |> 
+#                       unique(),
+#                   "_soil_RQ.html"))
+# 
+# }
+# 
+# rq_map("Glyphosate", "Břeclav")
+# 
+# soil_rq_map <- dir_ls(path_home_r(),
+#                       recurse = T,
+#                       regexp = "") |> vect()
+# 
+# tmap_mode("plot")
+# 
+# # animated rq gif
+# 
+# rq_soil_gif <- function(district) {
+#   
+#   rq_soil <- tm_shape(RCzechia::okresy() |> filter(NAZ_LAU1 == district),
+#                       name = "District borders") +
+#     tm_borders(col = "black",
+#                lwd = 1.5) +
+#     tm_shape(soil_rq_map|> 
+#                # mutate(RQ = RQ*1000) |> 
+#                filter(District == district) |>
+#                mask(vect(RCzechia::okresy() |>
+#                            filter(NAZ_LAU1 == district)))) +
+#     tm_polygons("RQ",
+#                 popup.vars = c("RQ topsoil" = "RQ"),
+#                 fill.scale = tm_scale_intervals(value.na = "#ffdeaf",
+#                                                 label.na = "Missing values",
+#                                                 style = "fixed",
+#                                                 breaks = c(0:3),
+#                                                 labels = c("<1", "1", ">1"),
+#                                                 values = "-brewer.prgn",
+#                                                 midpoint = 1),
+#                 fill.legend = tm_legend(title = "RQ topsoil",
+#                                         bg.color = "#f0f0f0",
+#                                         bg.alpha = 1),
+#                 lwd = 0.75,
+#                 group = "RQ topsoil for individual fields",
+#                 group.control = "check") +
+#     tm_basemap("OpenStreetMap", alpha = 0.5) +
+#     tm_layout(panel.labels = c(paste0("Acetamiprid RQ topsoil in ", district),
+#                                paste0("Glyphosate RQ topsoil in ", district),
+#                                paste0( "Tebuconazole RQ topsoil in ", district)),
+#               legend.outside = TRUE,
+#               legend.outside.position = "right") +
+#     tm_facets_pagewise(by = "acsubst")
+#   
+#   tmap_animation(rq_soil, paste0(district,"_rq_soil.gif"), fps = 0.45, scale = 1.25, dpi = 200)
+#   
+# }
+# 
+# rq_soil_gif("Benešov")
+
   
-  soil_rq_map <- dir_ls(path_home_r(),
-                        recurse = T,
-                        regexp = "CZdistricts_topsoil_3chem_farm_RQ.gpkg") |>
-    vect() 
-  
-  sf_use_s2(F)
-  tmap_mode("view")
-  
-  rq_dist <- tm_shape(RCzechia::okresy() |> filter(NAZ_LAU1 == district),
-                      name = "District borders") +
-    tm_borders(col = "black",
-               lwd = 1.5) +
-    tm_shape(soil_rq_map |>
-               filter(acsubst == ASs | District == district) |>
-               select(RQ, acsubst) |>
-               mask(vect(RCzechia::okresy() |> 
-                           filter(NAZ_LAU1 == district)))) +
-    tm_polygons("RQ",
-                popup.vars = c("RQ topsoil" = "RQ"),
-                fill.scale = tm_scale_intervals(value.na = "#ffdeaf",
-                                                label.na = "Missing values",
-                                                style = "fixed",
-                                                breaks = c(0:3),
-                                                labels = c("<1", "1", ">1"),
-                                                values = "-brewer.prgn",
-                                                midpoint = 1),
-                fill.legend = tm_legend(title = "RQ topsoil",
-                                        bg.color = "#f0f0f0",
-                                        bg.alpha = 1),
-                lwd = 0.75,
-                group = "RQ topsoil for individual fields",
-                group.control = "check") +
-    tm_title(paste0(RCzechia::okresy()[,3] |>
-                      filter(NAZ_LAU1 == district) |>
-                      st_drop_geometry() |> 
-                      unique(),
-                    ": 30-day ",
-                    soil_rq_map |>
-                      select(acsubst) |> 
-                      filter(acsubst == ASs) |> 
-                      values() |> 
-                      unique(),
-                   " topsoil risk quotient (RQ topsoil) following 1x application in July.")) +
-    # tm_scalebar(position = c("right", "bottom")) +
-    tm_basemap("Esri.WorldTopoMap", alpha = 0.5, group.control = "check")
-  
-  tmap_save(rq_dist,
-            paste0(RCzechia::okresy()[,3] |>
-                    filter(NAZ_LAU1 == district) |>
-                    st_drop_geometry() |> 
-                    unique(),
-                  "_",
-                  soil_rq_map |>
-                    select(acsubst) |> 
-                    filter(acsubst == ASs) |> 
-                      values() |> 
-                      unique(),
-                  "_soil_RQ.html"))
-
-}
-
-rq_map("Glyphosate", "Břeclav")
-
-soil_rq_map <- dir_ls(path_home_r(),
-                      recurse = T,
-                      regexp = "") |> vect()
-
-tmap_mode("plot")
-
-# animated rq gif
-
-rq_soil_gif <- function(district) {
-  
-  rq_soil <- tm_shape(RCzechia::okresy() |> filter(NAZ_LAU1 == district),
-                      name = "District borders") +
-    tm_borders(col = "black",
-               lwd = 1.5) +
-    tm_shape(soil_rq_map|> 
-               # mutate(RQ = RQ*1000) |> 
-               filter(District == district) |>
-               mask(vect(RCzechia::okresy() |>
-                           filter(NAZ_LAU1 == district)))) +
-    tm_polygons("RQ",
-                popup.vars = c("RQ topsoil" = "RQ"),
-                fill.scale = tm_scale_intervals(value.na = "#ffdeaf",
-                                                label.na = "Missing values",
-                                                style = "fixed",
-                                                breaks = c(0:3),
-                                                labels = c("<1", "1", ">1"),
-                                                values = "-brewer.prgn",
-                                                midpoint = 1),
-                fill.legend = tm_legend(title = "RQ topsoil",
-                                        bg.color = "#f0f0f0",
-                                        bg.alpha = 1),
-                lwd = 0.75,
-                group = "RQ topsoil for individual fields",
-                group.control = "check") +
-    tm_basemap("OpenStreetMap", alpha = 0.5) +
-    tm_layout(panel.labels = c(paste0("Acetamiprid RQ topsoil in ", district),
-                               paste0("Glyphosate RQ topsoil in ", district),
-                               paste0( "Tebuconazole RQ topsoil in ", district)),
-              legend.outside = TRUE,
-              legend.outside.position = "right") +
-    tm_facets_pagewise(by = "acsubst")
-  
-  tmap_animation(rq_soil, paste0(district,"_rq_soil.gif"), fps = 0.45, scale = 1.25, dpi = 200)
-  
-}
-
-rq_soil_gif("Benešov")
-
 # Risk map data preparation
-soil_rq <- dir_ls(path_home_r(),
-             recurse = T,
-             regexp = "Rank_selection_CZ_earthw.xlsx") |>
-  read_xlsx() |>
-  slice(1:23) |> 
-  mutate(ACTIVE = str_to_title(ACTIVE))
-
-soil_conc_map <- dir_ls(path_home_r(),
-                      recurse = T,
-                      regexp = "Benešov_topsoil_allchem_farm.gpkg") |>
-  vect()
-
-soil_conc_map |> names()
+  
+# AS_top <- dir_ls(path = path_home_r(),
+#                  recurse = T,
+#                  regexp = "Rank_selection_CZ_earthw.xlsx") |>
+#   read_xlsx() |>
+#   slice(1:23) |> 
+#   mutate(ACTIVE = str_to_title(ACTIVE))
+# 
+#  parcel_id <- terra::merge(crop_map_cz_dist |>
+#                select(ZKOD, CTVEREC, crop_name_eagri_map),
+#                dir_ls(path_home_r(),
+#                       recurse = T,
+#                       regexp = "GPZ_Plodiny_2021_12_31.xlsx") |> 
+#                  read.xlsx(sheet = 1),
+#                by.x = c("ZKOD", "CTVEREC", "crop_name_eagri_map"),
+#                by.y = c("ZKOD", "CTVEREC", "PLODINA_NA")) |> 
+#    select(ZKOD, FID, CTVEREC, FID, crop_name_eagri_map)
  
-soil_rq_map <- merge(soil_conc_map[c("acsubst",
-                                     "ZKOD", 
-                                     "CTVEREC",
-                                     "Crop",
-                                     "field_area", 
-                                     "District",
-                                     "HYBAS_ID",
-                                     "aprate_farm_g.ha",
-                                     "conc_total_soil_twa",
-                                     "frac_asubst_soil_water_ini",
-                                     "frac_asubst_soil_solid_ini",
-                                     "load_acsubst_mean_g.ndays",
-                                     "clay_perc",
-                                     "oc_perc",
-                                     "sand_perc",
-                                     "bulk_dens_kg.dm3",
-                                     "day")] |> 
-                       filter(acsubst %in% soil_rq[[1]]), soil_rq, by.x = "acsubst", by.y = "ACTIVE")
+# soil_RQ_as_nest <- dir_ls(path = "C:\\Users\\253120\\Documents",
+#                       recurse = T,
+#                       regexp = "Benešov_allchem_RQ_soil.gpkg") |>
+#   vect() |>
+#   values() |> 
+#   filter(acsubst %in% AS_top$ACTIVE) |> 
+#   filter(!is.na(RQ)) |> 
+#   mutate(RQ = round(RQ/1000,2)) |> 
+#   # unite("AS_crop_rq", acsubst, Crop, RQ, sep = "/", remove = FALSE) |> 
+#   select(-month, -ndays, -"NOEC mg.kg", -conc_acsubst_total_soil_twa_g.kg, -Crop, -RQ) |> 
+#   nest("AS" = acsubst)
+# 
+# soil_RQ_crop_nest <- dir_ls(path = "C:\\Users\\253120\\Documents",
+#                       recurse = T,
+#                       regexp = "Benešov_allchem_RQ_soil.gpkg") |>
+#   vect() |>
+#   values() |> 
+#   filter(acsubst %in% AS_top$ACTIVE) |> 
+#   filter(!is.na(RQ)) |> 
+#   mutate(RQ = round(RQ/1000,2)) |> 
+#   # unite("AS_crop_rq", acsubst, Crop, RQ, sep = "/", remove = FALSE) |> 
+#   select(-month, -ndays, -"NOEC mg.kg", -conc_acsubst_total_soil_twa_g.kg, -acsubst, -RQ) |> 
+#   nest("Crop" = Crop)
+# 
+# soil_RQ_rq_nest <- dir_ls(path = "C:\\Users\\253120\\Documents",
+#                       recurse = T,
+#                       regexp = "Benešov_allchem_RQ_soil.gpkg") |>
+#   vect() |>
+#   values() |> 
+#   filter(acsubst %in% AS_top$ACTIVE) |> 
+#   filter(!is.na(RQ)) |> 
+#   mutate(RQ = round(RQ/1000,2)) |> 
+#   # unite("AS_crop_rq", acsubst, Crop, RQ, sep = "/", remove = FALSE) |> 
+#   select(-month, -ndays, -"NOEC mg.kg", -conc_acsubst_total_soil_twa_g.kg, -acsubst, -Crop) |> 
+#   nest("RQ" = RQ)
+# 
+# soil_RQ <- dir_ls(path = "C:\\Users\\253120\\Documents",
+#                       recurse = T,
+#                       regexp = "Benešov_allchem_RQ_soil.gpkg") |>
+#   vect() |>
+#   filter(acsubst %in% AS_top$ACTIVE) |> 
+#   filter(!is.na(RQ)) |> 
+#   makeValid() |> 
+#    mask(vect(RCzechia::okresy() |>
+#                            filter(NAZ_LAU1 == "Benešov"))) |> 
+#   select("HYBAS_ID", "ZKOD", "CTVEREC", "Crop", "acsubst", "RQ") |> 
+#   mutate(RQ = round(RQ/1000,2) ,
+#       HYBAS_ID = as.character(HYBAS_ID))
+# 
+# soil_cumRQ_crop <- dir_ls(path = "C:\\Users\\253120\\Documents",
+#                       recurse = T,
+#                       regexp = "Benešov_allchem_RQ_soil.gpkg") |>
+#   vect() |>
+#   filter(acsubst %in% AS_top$ACTIVE) |> 
+#   filter(!is.na(RQ)) |> 
+#   makeValid() |> 
+#   mask(vect(RCzechia::okresy() |>
+#                            filter(NAZ_LAU1 == "Benešov"))) |> 
+#   select("HYBAS_ID", "ZKOD", "CTVEREC", "Crop", "acsubst", "RQ") |> 
+#   aggregate(c("HYBAS_ID", "ZKOD", "CTVEREC", "Crop"), fun = "sum") |> 
+#   mutate(sum_RQ = round(sum_RQ/1000,2) ,
+#       HYBAS_ID = as.character(HYBAS_ID))
+  
+  
+  
+# soil_rq_map <- merge(soil_conc_map[c("acsubst",
+#                                      "ZKOD", 
+#                                      "CTVEREC",
+#                                      "Crop",
+#                                      "field_area", 
+#                                      "District",
+#                                      "HYBAS_ID",
+#                                      "aprate_farm_g.ha",
+#                                      "conc_total_soil_twa",
+#                                      "frac_asubst_soil_water_ini",
+#                                      "frac_asubst_soil_solid_ini",
+#                                      "load_acsubst_mean_g.ndays",
+#                                      "clay_perc",
+#                                      "oc_perc",
+#                                      "sand_perc",
+#                                      "bulk_dens_kg.dm3",
+#                                      "day")] |> 
+#                        filter(acsubst %in% soil_rq[[1]]), soil_rq, by.x = "acsubst", by.y = "ACTIVE")
 
-write.xlsx(soil_rq_map |> values(), "benesov_RQ_cz.xlsx")
+# write.xlsx(soil_rq_map |> values(), "benesov_RQ_cz.xlsx")
 
 # writeVector(bene_rq_map, "Benešov_topsoil_3chem_farm_RQ.gpkg")
 # 
@@ -2407,11 +2912,11 @@ write.xlsx(soil_rq_map |> values(), "benesov_RQ_cz.xlsx")
 # 
 # bene_conc_map <- dir_ls(path_home_r(),
 #        recurse = T,
-#        regexp = "Benešov_topsoil_3chem_farm") |>
-#   vect()
+#        regexp = "Benešov_23chem_topsoil.gpkg") |>
+#   vect() |> 
 #   mask(vect(RCzechia::okresy() |>
 #               filter(NAZ_LAU1 == "Benešov")))
-# 
+  
 # brec_conc_map <- dir_ls(path_home_r(),
 #                         recurse = T,
 #                         regexp = "Břeclav_topsoil_3chem_farm") |>
@@ -2419,8 +2924,8 @@ write.xlsx(soil_rq_map |> values(), "benesov_RQ_cz.xlsx")
 #   mutate(unit = "\u00B5g\u00D7kg\u207B\u00B9",
 #          conc_total_soil_twa= conc_total_soil_twa/1000)
 #  
- # writeVector(bene_conc_map, "Benešov_topsoil_3chem_farm.gpkg")
- 
+# writeVector(bene_conc_map, "Benešov_topsoil_3chem_farm.gpkg")
+
 
 ##################################################################
 ########### START: Surface water monitoring stations #############

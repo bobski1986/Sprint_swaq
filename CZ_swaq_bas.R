@@ -116,8 +116,8 @@ acsubst_name <- gemap_cz["acsubst_name"] |>
 
 # Chemical input data from qsars (vega, epi) and PPDB where available #
 source(dir_ls(path_home_r(), recurse = T, regexp = "ppdb scraping"))
-chemprop <- chemprop_gen(acsubst_name = c("Glyphosate", "Tebuconazole", "Acetamiprid")) |> 
-  select(acsubst_name, DT50_typical_d, Koc_ml.g,  DT50_field_d, Kfoc_ml.g)
+chemprop <- chemprop_gen(Active = c("Glyphosate", "Tebuconazole", "Acetamiprid")) |> 
+  select(Active, DT50_typical_d, Koc_ml.g,  DT50_field_d, Kfoc_ml.g)
   # filter(!is.na(Kfoc_ml.g),
   #        !is.na(Koc_ml.g),
   #        !is.na(DT50_field_d),
