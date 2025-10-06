@@ -245,7 +245,7 @@ chemprop_gen <- function(Active) {
     logP_index[[as]] <- which(ppdb_df[[as]] == regex("Log P")) + 1
     noec_eworm_ch_repro_index[[as]] <- which(ppdb_df[[as]] == regex("Earthworms - Chronic NOEC, reproduction (mg kg⁻¹ dw soil)")) + 1
     lc50_eworm_ac_14d_index[[as]] <-  which(ppdb_df[[as]] == regex("Earthworms - Acute 14 day LC₅₀ (mg kg⁻¹ dw soil)")) + 1
-    noec_fish_ch_index[[as]] <- which(ppdb_df[[as]] == regex("Temperate Freshwater Fish - Chronic 21 day NOEC (mg l⁻¹)")) + 1
+    noec_fish_ch_21d_index[[as]] <- which(ppdb_df[[as]] == regex("Temperate Freshwater Fish - Chronic 21 day NOEC (mg l⁻¹)")) + 1
     lc50_fish_ac_96h_index[[as]] <-  which(ppdb_df[[as]] == regex("Temperate Freshwater Fish - Acute 96 hour LC₅₀ (mg l⁻¹)")) + 1
     
     # Extract the values of the selected properties
@@ -260,7 +260,7 @@ chemprop_gen <- function(Active) {
                                                    kd_index[[as]],
                                                    noec_eworm_ch_repro_index[[as]],
                                                    lc50_eworm_ac_14d_index[[as]],
-                                                   noec_fish_ch_index[[as]],
+                                                   noec_fish_ch_21d_index[[as]],
                                                    lc50_fish_ac_96h_index[[as]])
 
         # Create a table with the extracted properties
