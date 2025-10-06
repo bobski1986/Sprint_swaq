@@ -1771,7 +1771,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
              frac_asubst_soil_solid_lag = exp(-day * log(2) / DT50_typical_d) * frac_asubst_soil_solid_ini,
              conc_acsubst_total_soil_lag_g.kg = (frac_asubst_soil_water_lag + frac_asubst_soil_solid_lag) * conc_acsubst_total_soil_ini,
              conc_acsubst_total_soil_twa_g.kg = (conc_acsubst_total_soil_ini / (ndays * (log(2) / DT50_typical_d))) * (1 - exp(-ndays * (log(2) / DT50_typical_d))),
-             rq_acsubst_total_soil_twa = (conc_acsubst_total_soil_twa_g.kg)/NOEC_earthworm_chron_repr_mg.kg,
+             rq_acsubst_total_soil_twa = (conc_acsubst_total_soil_twa_g.kg/1000)/NOEC_earthworm_chron_repr_mg.kg,
              ## Product of AS runoff components
              load_acsubst_prod = pmap_dbl(list(crop_acsubst_area_basin_ha,
                                                aprate_basin,
@@ -1829,7 +1829,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
     soil_cumRQ <- soil_farm_mapinput |> 
      select("ZKOD", "CTVEREC", "Crop", "rq_acsubst_total_soil_twa") |> 
      aggregate(c("ZKOD", "CTVEREC", "Crop"), fun = "sum") |> 
-     mutate(sum_rq_acsubst_total_soil_twa = round(sum_rq_acsubst_total_soil_twa))
+     mutate(sum_rq_acsubst_total_soil_twa = round(sum_rq_acsubst_total_soil_twa,2))
    
    soil_RQ_all <- terra::merge(soil_cumRQ, soil_RQ_nest, by = c("Crop", "ZKOD", "CTVEREC")) |> 
      mutate(AS_rq = str_remove_all(AS_rq, "\""),
@@ -1854,16 +1854,19 @@ AS_statmap_topsoil_riverwater <- function(district_name,
     terra::intersect(rivers_basin_buff_seg[c("HYDROID", "SHAPE_Leng", "dis_m3_pyr", "dis_m3_pmn", "dis_m3_pmx")]) |> 
     terra::merge(chemprop[c("Active", "NOEC_earthworm_chron_repr_mg.kg", "NOEC_fish_21_mg.L")], by.x = "acsubst", by.y = "Active") |> 
     group_by(SHAPE_Leng, HYDROID) |>
-    mutate(conc_mean_river_seg = mean(load_acsubst_mean_g.ndays/(dis_m3_pyr*1000)),
-              conc_min_river_seg = mean(load_acsubst_min_g.ndays/(dis_m3_pmn*1000)),
-              conc_max_river_seg = mean(load_acsubst_max_g.ndays/(dis_m3_pmx*1000)),
-              rq_mean_river_seg_twa = conc_mean_river_seg/NOEC_fish_21_mg.L) |>
+    mutate(conc_mean_river_seg = mean(load_acsubst_mean_g.ndays/dis_m3_pyr),
+              conc_min_river_seg = mean(load_acsubst_min_g.ndays/dis_m3_pmn),
+              conc_max_river_seg = mean(load_acsubst_max_g.ndays/dis_m3_pmx),
+              rq_mean_river_seg_twa = (conc_mean_river_seg/1000)/NOEC_fish_21_mg.L,
+              rq_min_river_seg_twa = (conc_min_river_seg/1000)/NOEC_fish_21_mg.L,
+              rq_max_river_seg_twa = (conc_max_river_seg/1000)/NOEC_fish_21_mg.L
+           ) |>
     # add extra buffer only for plotting
     buffer(rivbuff_width)
-
+   
   # Calculate cumulative RQ in river water for individual river segments
    
-   river_RQ_nest <- river_seg_mapinput |>        
+   river_RQ_nest <- river_seg_mapinput |> 
      values() |> 
      group_by(SHAPE_Leng, HYDROID) |> 
      arrange(desc(rq_mean_river_seg_twa), .by_group = T) |>
@@ -1928,28 +1931,127 @@ AS_statmap_topsoil_riverwater <- function(district_name,
     
     for (as in seq_along(acsubst_name)) {
       
+      # Prepare data
       # Prepare soil data
-      
       soil_data <- soil_farm_mapinput |> 
         filter(acsubst %in% acsubst_name[as]) |> 
         mask(district_select)
       
+      # Prepare river water data
+      river_data <- river_seg_mapinput |>
+        filter(acsubst %in% acsubst_name[as])
+      
       # Color palettes
+      # Define color palette functions
+      # RQ Using reversed Purple-Green scheme, skipping middle (white) color
+      # For the categories of risk, it is important to have a cut at 0.2 (defined as safe level - exposure must be 5 times lower than NOEC). So, the first three categories would be <0.2, ≥ 0.2, ≥ 1... then, it could be ≥ 2, ≥ 3, ≥ 4...
+      
+      # Concentration maps palettes
       # Soil concentration palette
       
-      soil_pal <- colorBin(
+      soil_conc_pal <- colorBin(
+        palette = "BuPu",
+        domain = soil_data$conc_acsubst_total_soil_twa_g.kg,
+        bins = pretty(soil_data$conc_acsubst_total_soil_twa_g.kg),
+        na.color = "#ffdeaf"
+      )
+      
+      soil_conc_pal_rev <- colorBin(
         palette = "BuPu",
         domain = soil_data$conc_acsubst_total_soil_twa_g.kg,
         bins = pretty(soil_data$conc_acsubst_total_soil_twa_g.kg),
         na.color = "#ffdeaf",
-        reverse = T
+        reverse = T,
       )
       
-      # Map title for AS concentration in soil
+      # River water concentration palette
+      
+      river_conc_pal <- colorBin(
+        palette = "BuPu",
+        domain = river_data$conc_mean_river_seg,
+        bins = pretty(river_data$conc_mean_river_seg),
+        na.color = "#ffdeaf"
+      )
+      
+      river_conc_pal_rev <- colorBin(
+        palette = "BuPu",
+        domain = river_data$conc_mean_river_seg,
+        bins = pretty(river_data$conc_mean_river_seg),
+        na.color = "#ffdeaf"
+      )
+
+      # RQ maps palettes
+      # Soil RQ palette
+      soil_rq_colors <- rev(brewer.pal(11, "PRGn"))[c(2,3,4,7,8,9,10,11)]
+      
+      soil_rq_pal <- colorBin(
+        palette = soil_rq_colors,
+        domain = soil_data$rq_acsubst_total_soil_twa,
+        bins = c(0, 0.2, 1, 2, 3, 5, 15)
+      )
+      
+      # River RQ palette
+      river_rq_colors <- rev(brewer.pal(11, "PRGn"))[c(2,3,4,7,8,9,10,11)]
+      
+      river_rq_pal <- colorBin(
+        palette = river_rq_colors,
+        domain = river_seg_mapinput$rq_mean_river_seg_twa,
+        bins = c(0, 0.2, 1, 2, 3, 5, 15)
+      )
+
+      # Map titles
+      # Concentration maps titles
+      # Soil concentration map title
       soil_conc_title <- paste0(
         acsubst_name[as], " ",
-        conc_acsubst_soil_farm_mapinput$ndays |> unique(),
+        soil_data$ndays |> unique(),
         "-day PEC soil after 1x application in ",
+        app_month,
+        " ",
+        "(",
+        sim_yr,
+        ")",
+        " in ",
+        district_select$NAZ_LAU1,
+        " district"
+      )
+      
+      # River water concentration map title
+      river_conc_title <- paste0(
+        acsubst_name[as], " ",
+        river_data$ndays |> max(),
+        "-day PEC surface water after 1x application in ",
+        app_month,
+        " ",
+        "(",
+        sim_yr,
+        ")",
+        " in ",
+        district_select$NAZ_LAU1,
+        " district"
+      )
+      
+      # RQ maps titles
+      # Soil RQ map title
+      soil_rq_title <- paste0(
+        acsubst_name[as], " ",
+        soil_data$ndays |> unique(),
+        "-day RQ soil after 1x application in ",
+        app_month,
+        " ",
+        "(",
+        sim_yr,
+        ")",
+        " in ",
+        district_select$NAZ_LAU1,
+        " district"
+      )
+      
+      # River water RQ map title
+      river_rq_title <- paste0(
+        acsubst_name[as], " ",
+        river_data$ndays |> unique(),
+        "-day RQ surface water after 1x application in ",
         app_month,
         " ",
         "(",
@@ -1980,7 +2082,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
        # Add soil concentration polygons
        addPolygons(
           data = soil_data,
-          fillColor = ~soil_pal(conc_acsubst_total_soil_twa_g.kg),
+          fillColor = ~soil_conc_pal(conc_acsubst_total_soil_twa_g.kg),
           fillOpacity = 0.7,
           color = "white",
           weight = 0.2,
@@ -1990,7 +2092,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
             "<b>Concentration in topsoil (µg × kg⁻¹):</b><br>",
             ifelse(is.na(conc_acsubst_total_soil_twa_g.kg), 
                    "Missing values", 
-                   round(conc_acsubst_total_soil_twa_g.kg, 3))
+                   round(conc_acsubst_total_soil_twa_g.kg, 2))
           ),
           group = "AS concentration in soil"
         ) |> 
@@ -2000,10 +2102,10 @@ AS_statmap_topsoil_riverwater <- function(district_name,
         overlayGroups = c("District borders", "AS concentration in soil"),
         options = layersControlOptions(collapsed = FALSE)
       ) |>
-      
+
       # Add legend
       addLegend(
-        pal = soil_pal,
+        pal = soil_conc_pal_rev,
         values = soil_data$conc_acsubst_total_soil_twa_g.kg,
         title = "Concentration in soil<br>(time-weighted) (µg × kg⁻¹)",
         group = "AS concentration in soil",
@@ -2050,38 +2152,10 @@ AS_statmap_topsoil_riverwater <- function(district_name,
                                                     paste0(district_select$NAZ_LAU1,
                                                            "_",
                                                            acsubst_name[as],
-                                                           "_PEC_soil_conc",
+                                                           "_PEC_soil",
                                                            ".html")), selfcontained = TRUE)
   
-  
   # Soil RQ maps for individual AS
-  
-  # Define color palette function
-  # Using reversed Purple-Green scheme, skipping middle (white) color
-  # For the categories of risk, it is important to have a cut at 0.2 (defined as safe level - exposure must be 5 times lower than NOEC). So, the first three categories would be <0.2, ≥ 0.2, ≥ 1... then, it could be ≥ 2, ≥ 3, ≥ 4...
-  prg_colors <- rev(brewer.pal(11, "PRGn"))[c(2,3,4,7,8,9,10,11)]
-  
-  pal <- colorBin(
-    palette = prg_colors,
-    domain = soil_farm_mapinput$rq_acsubst_total_soil_twa,
-    bins = c(0, 0.2, 1, 2, 3, 5, 15)
-  )
-  
-  # Map title for AS RQ soil
-  soil_rq_title <- paste0(
-    acsubst_name[as], " ",
-    soil_data$ndays |> unique(),
-    "-day RQ soil after 1x application in ",
-    app_month,
-    " ",
-    "(",
-    sim_yr,
-    ")",
-    " in ",
-    district_select$NAZ_LAU1,
-    " district"
-  )
-  
   # Create the leaflet map
   soil_ind_rq_dist <- leaflet() |>
     # Add OpenStreetMap tiles with transparency
@@ -2100,7 +2174,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
     # Add soil RQ polygons
     addPolygons(
       data = soil_data,
-      fillColor = ~pal(rq_acsubst_total_soil_twa),
+      fillColor = ~soil_rq_pal(rq_acsubst_total_soil_twa),
       fillOpacity = 0.7,
       color = "black",
       weight = 0.5,
@@ -2122,7 +2196,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
       
       # Add custom legend
       addLegend(
-        colors = prg_colors,
+        colors = soil_rq_colors,
         labels = c("\u003c 0.2", "\u2265 0.2", "\u003c 1", "\u2265 1", "\u2265 2", "\u2265 3", "\u2265 4", "\u2265 5"),
         title = "Individual RQ soil",
         position = "bottomright",
@@ -2160,37 +2234,9 @@ AS_statmap_topsoil_riverwater <- function(district_name,
                                          paste0(district_select$NAZ_LAU1,
                                                 "_",
                                                 acsubst_name[as],
-                                                "_RQ_soil_conc",
+                                                "_RQ_soil",
                                                 ".html")), selfcontained = TRUE)
-  
-  # River water RQ maps for individual AS
-  
-  # Prepare river water data
-  river_data <- river_seg_mapinput |>
-    filter(acsubst %in% acsubst_name[as])
 
-    # River water concentration palette
-  river_pal <- colorNumeric(
-    palette = "BuPu",
-    domain = river_seg_mapinput$conc_mean_river_seg,
-    na.color = "#ffdeaf"
-  )
-
-    # Map title for river water
-  river_conc_title <- paste0(
-    acsubst_name[as], " ",
-    river_seg_mapinput$ndays |> max(),
-    "-day PEC surface water after 1x application in ",
-    app_month,
-    " ",
-    "(",
-    sim_yr,
-    ")",
-    " in ",
-    district_select$NAZ_LAU1,
-    " district"
-  )
-  
   # AS concentration in river water
   river_as_conc <- leaflet() |>
     addProviderTiles(
@@ -2211,7 +2257,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
     # Add river water concentration polygons
     addPolygons(
       data = river_data,
-      fillColor = ~river_pal(conc_mean_river_seg),
+      fillColor = ~river_conc_pal(conc_mean_river_seg),
       fillOpacity = 0.7,
       color = "white",
       weight = 0.2,
@@ -2220,8 +2266,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
                       "<b>Concentration in surface water (\u00B5g\u00D7dm\u207B\u00B3):</b><br>",
                       ifelse(is.na(conc_mean_river_seg), 
                              "Missing values", 
-                             round(conc_mean_river_seg, 3))
-      ),
+                             round(conc_mean_river_seg, 2))),
       group = "AS concentration in river water"
     ) |> 
     
@@ -2233,7 +2278,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
     
     # Add legend
     addLegend(
-      pal = river_pal,
+      pal = river_conc_pal,
       values = river_data$conc_mean_river_seg,
       title = "Concentration in river water<br>(time-weighted) (\u00B5g\u00D7dm\u207B\u00B3)",
       group = "AS concentration in river water",
@@ -2241,7 +2286,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
       opacity = 0.75,
       na.label = "Missing values",
       labFormat = labelFormat(between = " to ",
-                              digits = 2,
+                              digits = 3,
                               transform = function(x=river_data$conc_mean_river_seg |> values()) sort(x, decreasing = T))
     ) |>
     
@@ -2280,13 +2325,99 @@ AS_statmap_topsoil_riverwater <- function(district_name,
                                          paste0(district_select$NAZ_LAU1,
                                                 "_",
                                                 acsubst_name[as],
-                                                "_PEC_river_conc",
+                                                "_PEC_river",
                                                 ".html")), selfcontained = TRUE)
+  
+  # River water RQ maps for individual AS
+  # Create the leaflet map
+  river_ind_rq_dist <- leaflet() |>
+    # Add OpenStreetMap tiles with transparency
+    addTiles(options = tileOptions(opacity = 0.5)) |>
+    
+    # Add district borders
+    addPolylines(
+      data = district_select,
+      color = "black",
+      weight = 1.5,
+      opacity = 1,
+      fillOpacity = 0,
+      group = "District borders"
+    ) |>
+    
+    # Add soil RQ polygons
+    addPolygons(
+      data = river_data,
+      fillColor = ~river_rq_pal(rq_mean_river_seg_twa),
+      fillOpacity = 0.7,
+      color = "black",
+      weight = 0.5,
+      opacity = 0.75,
+      popup = ~paste0("<b>River segment ID: </b>", "<b>", HYDROID, "</b><br>",
+                      "<b>River water RQ (\u00B5g\u00D7dm\u207B\u00B3):</b><br>",
+                      ifelse(is.na(rq_mean_river_seg_twa), 
+                             "Missing values", 
+                             round(rq_mean_river_seg_twa, 3))),
+      group = "Individual RQ river water"
+      ) |>
+    
+    # Add layer controls
+    addLayersControl(
+      overlayGroups = c("District borders", "Individual RQ river water"),
+      options = layersControlOptions(collapsed = FALSE)
+    ) |>
+    
+    # Add scale bar
+    addScaleBar(position = "bottomright") |> 
+    
+    # Add custom legend
+    addLegend(
+      colors = river_rq_colors,
+      labels = c("\u003c 0.2", "\u2265 0.2", "\u003c 1", "\u2265 1", "\u2265 2", "\u2265 3", "\u2265 4", "\u2265 5"),
+      title = "Individual RQ river water",
+      position = "bottomright",
+      group = "Individual RQ river water",
+      opacity = 1
+    ) |> 
+    addControl(html = paste0("<div style='background-color: rgba(255, 255, 255, 0.9);
+                             padding: 6px 6px; border-radius: 4px; font-size: 14px; font-weight: bold; color: #333; max-width: 800px;
+                             line-height: 1.4;'>",
+                             river_rq_title, 
+                             "</div>"),
+               position = "topleft") |> 
+    addControl(html = "", position = "bottomleft") %>%
+    htmlwidgets::onRender("
+    function(el, x) {
+      // Remove default zoom control if it exists
+      if (this._controlCorners) {
+        var existingZoom = this._controlCorners.topleft.querySelector('.leaflet-control-zoom');
+        if (existingZoom) {
+          existingZoom.remove();
+        }
+      }
+      
+      // Add zoom control to bottom left
+      var zoomControl = L.control.zoom({
+        position: 'bottomleft'
+      });
+      zoomControl.addTo(this);
+    }
+  ")
+  
+  saveWidget(river_ind_rq_dist, file = paste0(dir_create(path_home_r(),
+                                                        "/Water"),
+                                             "/", 
+                                             paste0(district_select$NAZ_LAU1,
+                                                    "_",
+                                                    acsubst_name[as],
+                                                    "_RQ_river",
+                                                    ".html")), selfcontained = TRUE)
+  
+  
       
   }
    
-   # Cumulative RQ soil map
-
+   # Cumulative RQ maps
+    
    # Define color palette function
    # Using reversed Purple-Green scheme, skipping middle (white) color
    # For the categories of risk, it is important to have a cut at 0.2 (defined as safe level - exposure must be 5 times lower than NOEC). So, the first three categories would be <0.2, ≥ 0.2, ≥ 1... then, it could be ≥ 2, ≥ 3, ≥ 4...
@@ -2371,7 +2502,14 @@ AS_statmap_topsoil_riverwater <- function(district_name,
     }
   ")
    
-   saveWidget(soil_cum_rq_dist, paste0(district_select, "_RQcum_soil.html"))
+   saveWidget(soil_cum_rq_dist, file = paste0(path_home_r(),
+                                                          "/Water"),
+                                               "/", 
+                                               paste0(district_select$NAZ_LAU1,
+                                                      "_",
+                                                      acsubst_name[as],
+                                                      "_RQcum_river",
+                                                      ".html"), selfcontained = TRUE)
 }    
       
 #################################################################
