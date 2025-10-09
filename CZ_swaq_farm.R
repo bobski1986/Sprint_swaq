@@ -1811,12 +1811,9 @@ AS_statmap_topsoil_riverwater <- function(district_name,
   # Calculate RQ for individual farms and individual AS
    soil_farm_mapinput <- srunoff_acsubst_farm |>
      vect() |>
-     select(conc_acsubst_total_soil_ini,
-            conc_acsubst_total_soil_twa_g.kg,
+     select(conc_acsubst_total_soil_twa_g.kg,
             rq_acsubst_total_soil_twa,
             load_acsubst_mean_g.ndays,
-            load_acsubst_min_g.ndays,
-            load_acsubst_max_g.ndays,
             Crop,
             acsubst,
             month,
@@ -1826,10 +1823,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
             CTVEREC,
             EAGRI) |> 
      mutate(conc_acsubst_total_soil_twa_g.kg = conc_acsubst_total_soil_twa_g.kg,
-            conc_acsubst_total_soil_ini = conc_acsubst_total_soil_ini,
             load_acsubst_mean_g.ndays = load_acsubst_mean_g.ndays,
-            load_acsubst_min_g.ndays = load_acsubst_min_g.ndays,
-            load_acsubst_max_g.ndays = load_acsubst_max_g.ndays,
             rq_acsubst_total_soil_twa = rq_acsubst_total_soil_twa/1000)
    
    # Calculate cumulative RQ in soil for individual fields
@@ -1840,7 +1834,6 @@ AS_statmap_topsoil_riverwater <- function(district_name,
      arrange(desc(rq_acsubst_total_soil_twa), .by_group = T) |>
      distinct(ZKOD, CTVEREC, Crop, acsubst, .keep_all = T) |>
      filter(rq_acsubst_total_soil_twa >= 0.01) |> 
-     mutate(rq_acsubst_total_soil_twa = round(rq_acsubst_total_soil_twa,3)) |> 
      unite("AS_rq", acsubst, rq_acsubst_total_soil_twa, sep = " | ", remove = FALSE) |>
      select(ZKOD, CTVEREC, Crop, AS_rq) |>
      nest("AS_rq" = AS_rq) |> 
@@ -1852,8 +1845,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
      makeValid() |> 
      select("ZKOD", "CTVEREC", "Crop",  "rq_acsubst_total_soil_twa") |> 
      distinct(ZKOD, CTVEREC, Crop, .keep_all = T) |>
-     aggregate(c("ZKOD", "CTVEREC", "Crop"), fun = "sum") |> 
-     mutate(sum_rq_acsubst_total_soil_twa = round(sum_rq_acsubst_total_soil_twa,3))
+     aggregate(c("ZKOD", "CTVEREC", "Crop"), fun = "mean")
    
    # Merge nested RQs and summed RQs  datasets by unique field IDs
    soil_cumRQ_all <- terra::merge(soil_cumRQ, soil_RQ_nest, by = c("Crop", "ZKOD", "CTVEREC")) |> 
@@ -1870,8 +1862,6 @@ AS_statmap_topsoil_riverwater <- function(district_name,
   # Intersect farm loadings with river buffer segments
    # Calculate RQ for individual fields intersected with buffer around river segments
    river_seg_mapinput <- soil_farm_mapinput[c("load_acsubst_mean_g.ndays",
-                                              "load_acsubst_min_g.ndays",
-                                              "load_acsubst_max_g.ndays",
                                               "acsubst",
                                               "month",
                                               "ndays",
@@ -1880,11 +1870,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
     terra::intersect(rivers_basin_buff_seg[c("HYDROID", "NAMN1", "SHAPE_Leng", "dis_m3_pyr", "dis_m3_pmn", "dis_m3_pmx")]) |>
     terra::merge(chemprop[c("Active", "NOEC_earthworm_chron_repr_mg.kg", "NOEC_fish_21_mg.L")], by.x = "acsubst", by.y = "Active") |>
     mutate(conc_mean_river_seg = (load_acsubst_mean_g.ndays/dis_m3_pyr)/1000,
-              conc_min_river_seg = (load_acsubst_min_g.ndays/dis_m3_pmn)/1000,
-              conc_max_river_seg = (load_acsubst_max_g.ndays/dis_m3_pmx)/1000,
-              rq_mean_river_seg_twa = conc_mean_river_seg/NOEC_fish_21_mg.L,
-              rq_min_river_seg_twa = conc_min_river_seg/NOEC_fish_21_mg.L,
-              rq_max_river_seg_twa = conc_max_river_seg/NOEC_fish_21_mg.L)
+              rq_mean_river_seg_twa = conc_mean_river_seg/NOEC_fish_21_mg.L)
    
   # Calculate cumulative RQ for fields in river buffer for individual river segments
   # Create a character type column showing a list of ASs and RQs for each river segment 
@@ -1893,9 +1879,9 @@ AS_statmap_topsoil_riverwater <- function(district_name,
      group_by(SHAPE_Leng, HYDROID, NAMN1) |> 
      arrange(desc(rq_mean_river_seg_twa), .by_group = T) |>
      distinct(acsubst, .keep_all = T) |>
-     mutate(rq_mean_river_seg_twa = round(rq_mean_river_seg_twa, 3),
+     mutate(rq_mean_river_seg_twa = rq_mean_river_seg_twa,
             nr_fields = n()) |> 
-     # filter(rq_mean_river_seg_twa >= 0.001) |> 
+     # filter(rq_mean_river_seg_twa >= 0.001) |>
      unite("AS_rq", acsubst, rq_mean_river_seg_twa, sep = " | ", remove = FALSE) |>
      select(SHAPE_Leng, NAMN1, HYDROID, nr_fields, AS_rq) |>
      nest("AS_rq" = AS_rq) |> 
@@ -1904,7 +1890,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
   # Calculate summed RQs for fields in each unique river segment
   river_cumRQ <- river_seg_mapinput[c("HYDROID", "SHAPE_Leng", "NAMN1", "rq_mean_river_seg_twa", "acsubst")] |> 
      group_by(HYDROID, NAMN1, SHAPE_Leng) |> 
-     summarise(sum_rq_mean_river_seg_twa = round(sum(rq_mean_river_seg_twa), 3), .groups = "keep")
+     summarise(sum_rq_mean_river_seg_twa = mean(rq_mean_river_seg_twa), .groups = "keep")
    
   # Merge nested RQs and summed RQs  datasets by unique river segments and drop geometry
   river_cumRQ_df <- terra::merge(river_cumRQ, river_RQ_nest,
@@ -1972,6 +1958,58 @@ AS_statmap_topsoil_riverwater <- function(district_name,
 ########## START: Pesticide concentration Maps ###########
 ##########################################################
 
+  # Custom function to format numbers as power of 10 with superscript
+  format_power10 <- function(x, digits = 2) {
+    # Handle single value
+    format_single <- function(val) {
+      if (is.na(val)) return("Missing values")
+      
+      # Format in scientific notation
+      sci <- format(val, scientific = TRUE, digits = digits)
+      
+      # Parse the scientific notation
+      parts <- strsplit(sci, "e")[[1]]
+      
+      if (length(parts) == 1) {
+        # No exponent, just return the number
+        return(format(val, digits = digits, scientific = FALSE))
+      }
+      
+      mantissa <- as.numeric(parts[1])
+      exponent <- as.numeric(parts[2])
+      
+      # If exponent is 0, return unformatted value
+      if (exponent == 0) {
+        return(format(val, digits = digits, scientific = FALSE))
+      }
+      
+      # Create superscript for exponent
+      superscripts <- c("⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹", "⁻")
+      
+      # Convert exponent to superscript
+      exp_str <- as.character(abs(exponent))
+      exp_super <- paste0(sapply(strsplit(exp_str, "")[[1]], function(d) {
+        superscripts[as.numeric(d) + 1]
+      }), collapse = "")
+      
+      # Add minus sign if negative
+      if (exponent < 0) {
+        exp_super <- paste0("⁻", exp_super)
+      }
+      
+      # Return formatted string
+      paste0(format(mantissa, digits = digits, nsmall = 1), " × 10", exp_super)
+    }
+    
+    # Handle vector or single value
+    if (length(x) > 1) {
+      return(sapply(x, format_single))
+    } else {
+      return(format_single(x))
+    }
+  }
+  
+  
 pb <- progress_bar$new(
   format = "[:bar] :percent | :map_type | Substance: :substance | ETA: :eta",
   total = length(acsubst_name) * 4,  # 4 maps per substance
@@ -1979,14 +2017,14 @@ pb <- progress_bar$new(
   width = 100
 )
 
-for (as in seq_along(acsubst_name <- actual_acsubst_name[1])) {
+for (as in seq_along(acsubst_name <- actual_acsubst_name)) {
   
   # Store current substance name for progress updates
   current_substance <- acsubst_name[as]
   
   # Prepare data
   # Prepare soil data
-  soil_data <- soil_farm_mapinput |> 
+  soil_data <- soil_farm_mapinput |>
     filter(acsubst %in% acsubst_name[as]) |> 
     mask(district_select)
   
@@ -1996,7 +2034,7 @@ for (as in seq_along(acsubst_name <- actual_acsubst_name[1])) {
                    mask(district_select) |> 
                    filter(acsubst %in% acsubst_name[as]) |> 
                    group_by(HYDROID, NAMN1, SHAPE_Leng) |> 
-                   summarise(conc_mean_river_seg = mean(conc_mean_river_seg),
+                   summarise(conc_mean_river_seg = median(conc_mean_river_seg),
                              rq_mean_river_seg_twa = mean(rq_mean_river_seg_twa),
                              nr_fields = n(),
                              .groups = "keep") |> 
@@ -2128,7 +2166,7 @@ for (as in seq_along(acsubst_name <- actual_acsubst_name[1])) {
   )
   
   # AS concentration in topsoil
-  pb$tick(tokens = list(map_type = "Creating Soil PEC map", substance = current_substance))
+  if (!pb$finished) pb$tick(tokens = list(map_type = "Creating Soil PEC map", substance = current_substance))
   
   soil_as_conc <- leaflet() |>
     addTiles(options = tileOptions(opacity = 0.5)) |> 
@@ -2156,7 +2194,7 @@ for (as in seq_along(acsubst_name <- actual_acsubst_name[1])) {
         "<b>Concentration in soil (µg × kg⁻¹): </b>", "<b>",
         ifelse(is.na(conc_acsubst_total_soil_twa_g.kg), 
                "Missing values",
-               round(conc_acsubst_total_soil_twa_g.kg, 4)), "</b>"),
+               format_power10(conc_acsubst_total_soil_twa_g.kg,  digits = 2)), "</b>"),
       highlightOptions = highlightOptions(color = "black",
                                           weight = 3,
                                           bringToFront = TRUE),
@@ -2178,9 +2216,13 @@ for (as in seq_along(acsubst_name <- actual_acsubst_name[1])) {
     position = "bottomright",
     opacity = 0.75,
     na.label = "Missing values",
-    labFormat = labelFormat(between = " to ",
-                            digits = 4,
-                            transform = function(x=soil_data$conc_acsubst_total_soil_twa_g.kg) sort(x, decreasing = T))
+    labFormat = function(type, cuts, p) {
+      n <- length(cuts)
+      cuts <- sort(cuts, decreasing = TRUE)
+      paste0(sapply(cuts[-1], format_power10, digits = 2), 
+             " to ", 
+             sapply(cuts[-n], format_power10, digits = 2))
+    }
   ) |>
     
   # Add scale bar
@@ -2222,7 +2264,7 @@ saveWidget(soil_as_conc, file = paste0(dir_create(path_home_r(),
 
 # Soil RQ maps for individual AS
 # Create the leaflet map
-pb$tick(tokens = list(map_type = "Creating Soil RQ map", substance = current_substance))
+if (!pb$finished) pb$tick(tokens = list(map_type = "Creating Soil RQ map", substance = current_substance))
 
 soil_ind_rq_dist <- leaflet() |>
   # Add OpenStreetMap tiles with transparency
@@ -2251,7 +2293,7 @@ soil_ind_rq_dist <- leaflet() |>
                     "<b>Individual RQ soil: </b>", "<b>", 
                     ifelse(is.na(rq_acsubst_total_soil_twa), 
                            "Missing values", 
-                           round(rq_acsubst_total_soil_twa, 4)), "</b>"),
+                           format_power10(rq_acsubst_total_soil_twa, digits = 3)), "</b>"),
     highlightOptions = highlightOptions(color = "black",
                                         weight = 3,
                                         bringToFront = TRUE),
@@ -2310,7 +2352,7 @@ saveWidget(soil_ind_rq_dist, file = paste0(dir_create(path_home_r(),
                                             "_RQ_Soil.html")), selfcontained = T)
 
  # AS concentration in river water
-pb$tick(tokens = list(map_type = "Creating Water PEC map", substance = current_substance))
+if (!pb$finished) pb$tick(tokens = list(map_type = "Creating Water PEC map", substance = current_substance))
 
 river_as_conc <- leaflet() |>
   addTiles(options = tileOptions(opacity = 0.5)) |> 
@@ -2347,7 +2389,7 @@ river_as_conc <- leaflet() |>
                     "<b>",
                     ifelse(is.na(conc_mean_river_seg), 
                            "Missing values", 
-                           round(conc_mean_river_seg, 4)), "</b>"),
+                           format_power10(conc_mean_river_seg, digits = 3)), "</b>"),
     highlightOptions = highlightOptions(color = "black",
                                         weight = 3,
                                         bringToFront = TRUE),
@@ -2361,7 +2403,7 @@ river_as_conc <- leaflet() |>
               opacity = 0.25,
               fillColor = "#1f78b4",
               popup = ~paste0("<b>Catchment ID: ",HYBAS_ID |> as.character(),"</b><br>",
-                              "<b>Annual discharge m\u00B3: ", round(dis_m3_pyr, 2),"</b><br>"),
+                              "<b>Annual discharge m\u00B3: ", format_power10(dis_m3_pyr, 3),"</b><br>"),
               highlightOptions = highlightOptions(color = "black",
                                                   weight = 3,
                                                   bringToFront = TRUE),
@@ -2385,9 +2427,13 @@ river_as_conc <- leaflet() |>
     position = "bottomright",
     opacity = 0.75,
     na.label = "Missing values",
-    labFormat = labelFormat(between = " to ",
-                            digits = 4,
-                            transform = function(x=river_data$conc_mean_river_seg) sort(x, decreasing = T))
+    labFormat = function(type, cuts, p) {
+      n <- length(cuts)
+      cuts <- sort(cuts, decreasing = TRUE)
+      paste0(sapply(cuts[-1], format_power10, digits = 3), 
+             " to ", 
+             sapply(cuts[-n], format_power10, digits = 3))
+    }
   ) |>
   
   # Add scale bar
@@ -2429,7 +2475,7 @@ saveWidget(river_as_conc, file = paste0(dir_create(path_home_r(),
 
 # River water RQ maps for individual AS
 # Create the leaflet map
-pb$tick(tokens = list(map_type = "Creating Water RQ map", substance = current_substance))
+if (!pb$finished) pb$tick(tokens = list(map_type = "Creating Water RQ map", substance = current_substance))
 
 river_ind_rq_dist <- leaflet() |>
   # Add OpenStreetMap tiles with transparency
@@ -2467,7 +2513,7 @@ river_ind_rq_dist <- leaflet() |>
                     "<b>",
                     ifelse(is.na(rq_mean_river_seg_twa), 
                            "Missing values", 
-                           round(rq_mean_river_seg_twa, 4)), "<b>"),
+                           format_power10(rq_mean_river_seg_twa, digits = 3)), "<b>"),
     highlightOptions = highlightOptions(color = "black",
                                         weight = 3,
                                         bringToFront = TRUE),
@@ -2481,7 +2527,7 @@ river_ind_rq_dist <- leaflet() |>
               opacity = 0.25,
               fillColor = "#1f78b4",
               popup = ~paste0("<b>Catchment ID: ",HYBAS_ID |> as.character(),"</b><br>",
-                              "<b>Annual discharge m\u00B3: ", round(dis_m3_pyr, 2),"</b><br>"),
+                              "<b>Annual discharge m\u00B3: ", format_power10(dis_m3_pyr, digits = 3),"</b><br>"),
               highlightOptions = highlightOptions(color = "black",
                                                   weight = 3,
                                                   bringToFront = TRUE),
