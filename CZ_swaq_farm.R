@@ -1321,29 +1321,30 @@ AS_statmap_topsoil_riverwater <- function(district_name,
   district_name <- "Benešov"
   # basins_nrmin <- 1
   # basins_nrmax <- 21
-  acsubst_name <- c("Dimoxystrobin",
-                    "Difenoconazole")
-                    # "Doscalid",
-                    # "Fluazinam",
-                    # "Prochloraz",
-                    # "Diquat",
-                    # "Azoxystrobin",
-                    # "Pethoxamid",
-                    # "Benzovindiflupyr",
-                    # "Tebuconazole",
-                    # "Quinmerac",
-                    # "Mefentrifluconazole",
-                    # "Cyproconazole",
-                    # "Tefluthrin",
-                    # "Picloram",
-                    # "Metazachlor",
-                    # "Pendimethalin",
-                    # "Gamma-cyhalothrin",
-                    # "Deltamethrin",
-                    # "Epoxiconazole",
-                    # "Glyphosate",
-                    # "Spiroxamine",
-                    # "Terbuthylazine")
+  acsubst_name <- c(
+                    "Dimoxystrobin",
+                    "Difenoconazole",
+                    "Doscalid",
+                    "Fluazinam",
+                    "Prochloraz",
+                    "Diquat",
+                    "Azoxystrobin",
+                    "Pethoxamid",
+                    "Benzovindiflupyr",
+                    "Tebuconazole",
+                    "Quinmerac",
+                    "Mefentrifluconazole",
+                    "Cyproconazole",
+                    "Tefluthrin",
+                    "Picloram",
+                    "Metazachlor",
+                    "Pendimethalin",
+                    "Gamma-cyhalothrin",
+                    "Deltamethrin",
+                    "Epoxiconazole",
+                    "Glyphosate",
+                    "Spiroxamine",
+                    "Terbuthylazine")
   sim_yr <- 2021
   app_month <- "July"
   app_startday <- 1
@@ -1426,8 +1427,11 @@ AS_statmap_topsoil_riverwater <- function(district_name,
     cat("\r", "Gemap for", basin, "basin" ,"(out of", basins_cz_distr_max |> length(),")", "in", district_name, "is being processed")
   }
   
+  actual_acsubst_name <- gemap_loc$acsubst |> unique()
+  
   gemap_loc <- gemap_loc |> vect() |> terra::intersect(basins_cz_distr["HYBAS_ID"])
-
+  
+  
   # CHMU Rainfall#
   # For the moment: rainfall data remain separate dataset to be later connected with the crop BBCH and scheduled in PPP registry AS application
   meteo_stations <- read.csv(dir_ls(path_home_r(),
@@ -1778,7 +1782,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
              frac_asubst_soil_solid_lag = exp(-day * log(2) / DT50_typical_d) * frac_asubst_soil_solid_ini,
              conc_acsubst_total_soil_lag_g.kg = (frac_asubst_soil_water_lag + frac_asubst_soil_solid_lag) * conc_acsubst_total_soil_ini,
              conc_acsubst_total_soil_twa_g.kg = (conc_acsubst_total_soil_ini / (ndays * (log(2) / DT50_typical_d))) * (1 - exp(-ndays * (log(2) / DT50_typical_d))),
-             rq_acsubst_total_soil_twa = (conc_acsubst_total_soil_twa_g.kg/1000)/NOEC_earthworm_chron_repr_mg.kg,
+             rq_acsubst_total_soil_twa = (conc_acsubst_total_soil_twa_g.kg)/NOEC_earthworm_chron_repr_mg.kg,
              ## Product of AS runoff components
              load_acsubst_prod = pmap_dbl(list(crop_acsubst_area_basin_ha,
                                                aprate_basin,
@@ -1832,7 +1836,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
      group_by("ZKOD", "CTVEREC", "Crop") |> 
      arrange(desc(rq_acsubst_total_soil_twa), .by_group = T) |>
      distinct(ZKOD, CTVEREC, Crop, acsubst, .keep_all = T) |>
-     mutate(rq_acsubst_total_soil_twa = round(rq_acsubst_total_soil_twa,2)) |> 
+     mutate(rq_acsubst_total_soil_twa = round(rq_acsubst_total_soil_twa,3)) |> 
      unite("AS_rq", acsubst, rq_acsubst_total_soil_twa, sep = " | ", remove = FALSE) |>
      select(ZKOD, CTVEREC, Crop, AS_rq) |>
      nest("AS_rq" = AS_rq) |> 
@@ -1844,7 +1848,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
      select("ZKOD", "CTVEREC", "Crop", "acsubst", "rq_acsubst_total_soil_twa") |> 
      distinct(ZKOD, CTVEREC, Crop, acsubst, .keep_all = T) |>
      aggregate(c("ZKOD", "CTVEREC", "Crop"), fun = "sum") |> 
-     mutate(sum_rq_acsubst_total_soil_twa = round(sum_rq_acsubst_total_soil_twa,2))
+     mutate(sum_rq_acsubst_total_soil_twa = round(sum_rq_acsubst_total_soil_twa,3))
    
    soil_RQ_all <- terra::merge(soil_cumRQ, soil_RQ_nest, by = c("Crop", "ZKOD", "CTVEREC")) |> 
      mutate(AS_rq = str_remove_all(AS_rq, "\""),
@@ -1874,6 +1878,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
               rq_mean_river_seg_twa = (conc_mean_river_seg/1000)/NOEC_fish_21_mg.L,
               rq_min_river_seg_twa = (conc_min_river_seg/1000)/NOEC_fish_21_mg.L,
               rq_max_river_seg_twa = (conc_max_river_seg/1000)/NOEC_fish_21_mg.L)
+  
    
   # Calculate cumulative RQ for fields in river buffer for individual river segments
   # Create a character type column showing a list of ASs and RQs for each river segment 
@@ -1882,14 +1887,14 @@ AS_statmap_topsoil_riverwater <- function(district_name,
      group_by(SHAPE_Leng, HYDROID, NAMN1) |> 
      arrange(desc(rq_mean_river_seg_twa), .by_group = T) |>
      distinct(acsubst, .keep_all = T) |>
-     mutate(rq_mean_river_seg_twa = round(rq_mean_river_seg_twa, 2)) |> 
+     mutate(rq_mean_river_seg_twa = round(rq_mean_river_seg_twa, 3)/100) |> 
      unite("AS_rq", acsubst, rq_mean_river_seg_twa, sep = " | ", remove = FALSE) |>
      select(SHAPE_Leng, NAMN1, HYDROID, AS_rq) |>
      nest("AS_rq" = AS_rq) |> 
      ungroup() 
    
-   # Calculate summed RQs for fields in each unique river segment
-   river_cumRQ <- river_seg_mapinput[c("HYDROID", "SHAPE_Leng", "NAMN1", "rq_mean_river_seg_twa", "acsubst")] |> 
+  # Calculate summed RQs for fields in each unique river segment
+  river_cumRQ <- river_seg_mapinput[c("HYDROID", "SHAPE_Leng", "NAMN1", "rq_mean_river_seg_twa", "acsubst")] |> 
      group_by(HYDROID, NAMN1, SHAPE_Leng) |> 
      summarise(sum_rq_mean_river_seg_twa = sum(rq_mean_river_seg_twa), .groups = "keep",
                nr_fields = n())
@@ -1912,6 +1917,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
                                   river_cumRQ_df,
                                  by = c("HYDROID", "NAMN1", "SHAPE_Leng"))
    
+
 # writeVector(conc_acsubst_river_seg_mapinput,
 #              paste0(district_name, "_", acsubst_name, "_riverwater.gpkg"),
 #              overwrite = T)
@@ -1960,7 +1966,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
 ########## START: Pesticide concentration Maps ###########
 ##########################################################
     
-    for (as in seq_along(acsubst_name)) {
+    for (as in seq_along(acsubst_name <- actual_acsubst_name)) {
       
       # Prepare data
       # Prepare soil data
@@ -1969,7 +1975,6 @@ AS_statmap_topsoil_riverwater <- function(district_name,
         mask(district_select)
       
       # Prepare river water data
-      
       river_data <- terra::merge(rivers_basin_buff_seg[c("HYDROID", "NAMN1", "SHAPE_Leng")],
                      river_seg_mapinput |>
                        mask(district_select) |> 
@@ -2200,7 +2205,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
                                                     paste0(district_select$NAZ_LAU1,
                                                            "_",
                                                            acsubst_name[as],
-                                                           "_PEC_soil.html")), selfcontained = T)
+                                                           "_PEC_Soil.html")), selfcontained = T)
   
   # Soil RQ maps for individual AS
   # Create the leaflet map
@@ -2231,7 +2236,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
                       "<b>Individual RQ soil: </b>", "<b>", 
                       ifelse(is.na(rq_acsubst_total_soil_twa), 
                              "Missing values", 
-                             round(rq_acsubst_total_soil_twa, 2)), "</b>"),
+                             round(rq_acsubst_total_soil_twa, 3)), "</b>"),
       highlightOptions = highlightOptions(color = "black",
                                           weight = 3,
                                           bringToFront = TRUE),
@@ -2287,7 +2292,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
                                          paste0(district_select$NAZ_LAU1,
                                                 "_",
                                                 acsubst_name[as],
-                                                "_RQ_soil.html")), selfcontained = T)
+                                                "_RQ_Soil.html")), selfcontained = T)
 
    # AS concentration in river water
   river_as_conc <- leaflet() |>
@@ -2348,11 +2353,11 @@ AS_statmap_topsoil_riverwater <- function(district_name,
     
     # Add layer controls
     addLayersControl(
-      overlayGroups = c("District borders", "Individual river segments", "River network"),
+      overlayGroups = c("District borders", "Individual river segments", "River network", "River basins"),
       options = layersControlOptions(collapsed = FALSE)
     ) |>
     
-    hideGroup("River network") |> 
+    hideGroup("River basins") |> 
     
     # Add legend
     addLegend(
@@ -2403,7 +2408,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
                                          paste0(district_select$NAZ_LAU1,
                                                 "_",
                                                 acsubst_name[as],
-                                                "_PEC_river.html")), selfcontained = T)
+                                                "_PEC_Water.html")), selfcontained = T)
   
   # River water RQ maps for individual AS
   # Create the leaflet map
@@ -2515,7 +2520,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
                                              paste0(district_select$NAZ_LAU1,
                                                     "_",
                                                     acsubst_name[as],
-                                                    "_RQ_river.html")), selfcontained = T)
+                                                    "_RQ_Water.html")), selfcontained = T)
   }
    
    # Cumulative RQ maps
@@ -2652,7 +2657,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
                                               "/Soil/",
                                               district_select$NAZ_LAU1,
                                               "_",
-                                              "_RQcum_soil.html"), selfcontained = T)
+                                              "_RQcum_Soil.html"), selfcontained = T)
    
    # Cumulative RQ river water
    river_cum_rq_dist <- leaflet() |>
@@ -2760,7 +2765,7 @@ AS_statmap_topsoil_riverwater <- function(district_name,
                                                "/Water/",
                                                district_select$NAZ_LAU1,
                                                "_",
-                                               "_RQcum_river.html"), selfcontained = T)
+                                               "_RQcum_Water.html"), selfcontained = T)
 }    
       
 #################################################################
