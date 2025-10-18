@@ -1,5 +1,5 @@
 pkg <- c("tidyverse", "fs", "readxl", "terra", "tmap", "OpenStreetMap", "tidyterra", "sf", "data.table", "fuzzyjoin", "openxlsx", 'ncdf4',
-"leaflet", "htmltools", "htmlwidgets")
+"leaflet", "htmltools", "htmlwidgets", "RColorBrewer", "progress")
 
 for (i in pkg) {
   if (!requireNamespace(i, quietly = TRUE)) { 
@@ -94,6 +94,9 @@ gemap_dk <- dir_ls(path_home_r(), recurse = T, regexp = "gemap_3chem_dk_wgs84") 
 acsubst_name <- gemap_dk["Active"] |> values() |> unique() |> pull()
 
 # Chemical input data from qsars (vega, epi) and PPDB where available #
+# In case of error e.g., "Error in ppdb_df_values ! Can't extract rows past the end",
+# first check if the names of properties are the same in the script and PPDB, 
+# PPDB gets updated every now and then, so must be the scraping script.
 source(dir_ls(path_home_r(), recurse = T, regexp = "ppdb scraping"))
 chemprop <- chemprop_gen(acsubst_name) |> 
   select(acsubst_name, Kfoc_ml.g, DT50_field_d, DT50_typical_d, Koc_ml.g) 
@@ -646,7 +649,6 @@ pec_swater_dk <- leaflet(options = leafletOptions()) %>%
                  opacity = 1,
                  group = "Stream level",
                  options = pathOptions(pane = "rast_conc")) %>%
-  addScaleBar(position = "bottomright") %>%
   addLegend(pal = color_palette_rast_rev,
             values = values(conc_rivseg_agg_rast_dk),
             title = paste0(conc_rivseg_agg_vect_dk$Active.substance |> unique(),
@@ -664,8 +666,8 @@ pec_swater_dk <- leaflet(options = leafletOptions()) %>%
               color = "black",
               weight = 0.5,
               opacity = 1,
-                 group = "Basin level",
-                 options = pathOptions(pane = "vect_conc"),
+              group = "Basin level",
+              options = pathOptions(pane = "vect_conc"),
               highlightOptions = highlightOptions(color = "black",
                                                   weight = 3,
                                                   bringToFront = TRUE),
@@ -687,7 +689,6 @@ pec_swater_dk <- leaflet(options = leafletOptions()) %>%
                                pull(),
                              " [km]",
                              "<div>")) %>% 
-  addScaleBar(position = "bottomright") %>%
   addLegend(pal = color_palette_vect_rev,
             values = values(conc_rivseg_agg_vect_dk[,2]),
             title = paste0(conc_rivseg_agg_vect_dk$Active.substance |> unique(),
@@ -701,6 +702,7 @@ pec_swater_dk <- leaflet(options = leafletOptions()) %>%
     baseGroups = c("Esri World Topo Map"),
     options = layersControlOptions(collapsed = F, autoZIndex = T)) %>%
   hideGroup("Stream level") |> 
+  addScaleBar(position = "bottomright") %>%
   addControl(html = paste0("<div style='background-color: rgba(255, 255, 255, 0.9);
                              padding: 6px 6px; border-radius: 4px; font-size: 14px; font-weight: bold; color: #333; max-width: 800px;
                              line-height: 1.4;'>",

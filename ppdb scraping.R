@@ -226,7 +226,7 @@ chemprop_gen <- function(Active) {
     
     # Extract all the properties for each pesticide into one table
     ppdb_df[[as]] <- ppdb_repo_chem |>
-      filter(str_detect(chem_name, paste0("^",ASs[as], "$"))) |>
+      filter(str_detect(chem_name, paste0("^", ASs[as], "$"))) |>
       pull(2) |> 
       read_html() |>
       html_elements(".row_header, .data1, .data3") |> 
@@ -238,7 +238,7 @@ chemprop_gen <- function(Active) {
     dt50typical_index[[as]] <- which(ppdb_df[[as]] == regex("DT₅₀ (typical)")) + 1
     CAS_index[[as]] <- which(ppdb_df[[as]] == regex("CAS RN")) + 1
     smiles_index[[as]] <- which(ppdb_df[[as]] == regex("Canonical SMILES")) + 1
-    sol_water_20_index[[as]] <- which(ppdb_df[[as]] == regex("Solubility - In water at 20 °C (mg l⁻¹)")) + 1
+    sol_water_20_index[[as]] <- which(ppdb_df[[as]] == regex("Solubility - In water at 20 °C at pH 7 (mg l⁻¹)")) + 1
     koc_index[[as]] <- which(ppdb_df[[as]] == regex("Koc (mL g⁻¹)")) + 1
     kfoc_index[[as]] <- which(ppdb_df[[as]] == regex("Kfoc (mL g⁻¹)")) + 1
     kd_index[[as]] <- which(ppdb_df[[as]] == regex("Kd (mL g⁻¹)")) + 1
@@ -263,7 +263,7 @@ chemprop_gen <- function(Active) {
                                                    noec_fish_ch_21d_index[[as]],
                                                    lc50_fish_ac_96h_index[[as]])
 
-        # Create a table with the extracted properties
+    # Create a table with the extracted properties
     ppdb_df_prop[[as]] <- tibble(Active = ASs[as],
                                  "CAS" = ppdb_df_values[[as]][[1,1]],
                                  "SMILES" = ppdb_df_values[[as]][[2,1]],
@@ -299,7 +299,6 @@ chemprop_gen <- function(Active) {
   # write_excel_csv2(ppdb_df_prop |> bind_rows(),"chem_prop_ppdb.csv")
   
 }
-
 
 
 
