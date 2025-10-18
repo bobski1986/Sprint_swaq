@@ -1,5 +1,5 @@
 pkg <- c("tidyverse", "fs", "readxl", "terra", "tmap", "OpenStreetMap", "maptiles", "tidyterra", "sf", "data.table", "fuzzyjoin", "openxlsx",
-         "EnvStats", "leaflet", "htmltools", "RColorBrewer", "progress")
+         "EnvStats", "leaflet", "htmltools", "htmlwidgets", "RColorBrewer", "progress", "RCzechia")
 
 for (i in pkg) {
   if (!requireNamespace(i, quietly = TRUE)) { 
@@ -19,6 +19,40 @@ nuts3_cz <- nuts |>
 
 nuts1_cz <- nuts |>
   filter(CNTR_CODE == "CZ" & LEVL_CODE == 1) 
+
+districts <- okresy("low")|>
+  mutate(NAZ_LAU1 = str_to_title((gsub("-", " ", NAZ_LAU1, fixed = TRUE)))) |>
+  vect()
+# Define the approximate bounding box for country in EPSG:32631 coordinates.
+crs_utm31n_cz <- "EPSG:32633"
+
+project(nuts3_cz, crs_utm31n_cz)
+
+xmin <- 293620  # Approximate western boundary (easting)
+xmax <- 778750.9  # Approximate eastern boundary (easting)
+ymin <- 5379120 # Approximate southern boundary (northing)
+ymax <- 5656129   # Approximate northern boundary (northing)
+
+# Define the desired pixel resolution (size of each cell). 
+# The size of the pixel is defined based on the smallest size of the vector to be rasterised, e.g., 100m buffer polygons around river segments
+res_x <- 100 # n meters in the X (easting) direction
+res_y <- 100 # n meters in the Y (northing) direction
+
+# # Calculate the number of columns and rows needed for the raster grid.
+ncols <- ceiling((xmax - xmin) / res_x)
+nrows <- ceiling((ymax - ymin) / res_y)
+
+# Create an empty raster. This is a template for rasterisation of river network.
+empty_raster_cz <- rast(
+  ncols = ncols,        # Number of columns
+  nrows = nrows,        # Number of rows
+  xmin = xmin,          # Minimum X coordinate of the extent
+  xmax = xmin + ncols * res_x, # Maximum X coordinate, precisely calculated from xmin and ncols
+  ymin = ymin,          # Minimum Y coordinate of the extent
+  ymax = ymin + nrows * res_y, # Maximum Y coordinate, precisely calculated from ymin and nrows
+  crs = crs_utm31n_cz,     # Coordinate Reference System (EPSG:32631)
+  resolution = c(res_x, res_y) # Resolution in X and Y directions
+)
 
 # Read soil density map
 budens_jrc_cz_path <- dir_ls(path_home_r(),
@@ -44,7 +78,7 @@ basins_cz <- dir_ls(path_home_r(), recurse = T, regexp = "hydrosheds_lvl09_basin
 budens_jrc_cz_bas <- zonal(budens_jrc_cz, basins_cz, "mean", as.polygons = T, na.rm = T) |>
   select(HYBAS_ID, budens_jrc_CZ)
 
-basins_cz <-  basins_cz |>
+basins_distr_cz <-  basins_cz |>
   left_join(budens_jrc_cz_bas |>
               values(),
             by = "HYBAS_ID") |>
@@ -53,7 +87,9 @@ basins_cz <-  basins_cz |>
                     mass_soil_t3_ha = vol_soil_m3_ha * budens_jrc_CZ,
                     oc_perc = (soc_th_uav/mass_soil_t3_ha) * 100,
                     area_basins_cz_ha = basins_cz |>
-                      expanse("ha"))
+                      expanse("ha")) |> 
+  terra::intersect(districts[,3])
+  
 
 # Add crop specific spray drift values to the "gemap"
 # spray_drift <- tibble(
@@ -637,50 +673,38 @@ conc_acsubst_river_seg_cz <- rivers_farm_buff_cz |>
   mutate(segment_weight = SHAPE_Leng/length_tot_bas_m) |> 
   mutate(conc_river_seg_ug.dm3 = srunoff_load/(dis_m3_pyr*1000),
          conc_river_seg_w_ug.dm3 = conc_river_seg_ug.dm3*segment_weight) |>
-  terra::split("acsubst_name")
+  terra::split("acsubst")
 
 # Aggregate pesticide concentration in streams for each crop and river basin
 conc_rivseg_agg_cz <- svc(aggregate(conc_acsubst_river_seg_cz[[1]][c("Crop",  "HYBAS_ID" , "conc_river_seg_w_ug.dm3")],
                                  c("HYBAS_ID", "Crop"),
-                                 fun = "sum"),                          
+                                 fun = "sum") |> 
+                            zonal(rivers_buff_cz, as.polygons = T),                          
                        aggregate(conc_acsubst_river_seg_cz[[2]][c("Crop",  "HYBAS_ID" ,  "conc_river_seg_w_ug.dm3")],
                                  c("HYBAS_ID", "Crop"),
-                                 fun = "sum"),
+                                 fun = "sum") |> 
+                         zonal(rivers_buff_cz, as.polygons = T),
                        aggregate(conc_acsubst_river_seg_cz[[3]][c("Crop",  "HYBAS_ID" , "conc_river_seg_w_ug.dm3")],
                                  c("HYBAS_ID", "Crop"),
-                                 fun = "sum"))
+                                 fun = "sum") |> 
+                         zonal(rivers_buff_cz, as.polygons = T))
 
 # Rasterise aggregated concentration values for each chemical
 conc_rivseg_agg_rast_cz <- sprc(rasterize(project(conc_rivseg_agg_cz[[1]],
                                                crs("EPSG:32633")),
-                                       project(budens_jrc_cz, crs("EPSG:32633")),
+                                       empty_raster_cz,
                                        field = "sum_conc_river_seg_w_ug.dm3",
-                                       touches = T) |> 
-                                  zonal(project(rivers_buff_cz,
-                                                crs("EPSG:32633")),
-                                        fun = "median",
-                                        touches = T,
-                                        as.raster = T),
+                                       touches = T),
                              rasterize(project(conc_rivseg_agg_cz[[2]],
                                                crs("EPSG:32633")),
-                                       project(budens_jrc_cz, crs("EPSG:32633")),
+                                       empty_raster_cz,
                                        field = "sum_conc_river_seg_w_ug.dm3",
-                                       touches = T) |> 
-                               zonal(project(rivers_buff_cz,
-                                             crs("EPSG:32633")),
-                                     fun = "median",
-                                     touches = T,
-                                     as.raster = T),
+                                       touches = T),
                              rasterize(project(conc_rivseg_agg_cz[[3]],
                                                crs("EPSG:32633")),
-                                       project(budens_jrc_cz, crs("EPSG:32633")),
+                                       empty_raster_cz,
                                        field = "sum_conc_river_seg_w_ug.dm3",
-                                       touches = T) |> 
-                               zonal(project(rivers_buff_cz,
-                                             crs("EPSG:32633")),
-                                     fun = "median",
-                                     touches = T,
-                                     as.raster = T)) 
+                                       touches = T))
 
 # Create vector layers of aggregated pesticide concentration in streams for each respective basin level
 conc_wmean_river_basin_cz <- list()
@@ -690,7 +714,7 @@ conc_rivseg_agg_vect_cz <- list()
 
 for(i in seq_along(conc_acsubst_river_seg_cz)){
   
-  cat("\r", unique(values(conc_acsubst_river_seg_cz[[i]]["acsubst_name"]))[1,1],
+  cat("\r", unique(values(conc_acsubst_river_seg_cz[[i]]["acsubst"]))[1,1],
       "is being processed out of",
       seq_along(conc_acsubst_river_seg_cz) |> max(), 
       "ASs.",
@@ -716,7 +740,7 @@ for(i in seq_along(conc_acsubst_river_seg_cz)){
                                           as.data.table(), by = "HYBAS_ID") |> 
     left_join(nr_river_buffer_basin_cz[[i]], by = "HYBAS_ID") |>
     # terra::na.omit("HYBAS_ID") |> 
-    mutate("Active substance" = unique(values(conc_acsubst_river_seg_cz[[i]]["acsubst_name"]))[1,1],
+    mutate("Active substance" = unique(values(conc_acsubst_river_seg_cz[[i]]["acsubst"]))[1,1],
            length_km = round(SHAPE_Leng/1000, 2)) |> 
     tidyterra::rename("Basin ID" = HYBAS_ID,
                       "Concentration [\u00B5g\u00D7dm\u207B\u00B3]" = conc_river_seg_w_ug.dm3,
@@ -777,6 +801,58 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
                                      reverse = T, 
                                      na.color = "#ffdeaf")
   
+  # Custom function to format numbers as power of 10 with superscript
+  format_power10 <- function(x, digits = 2) {
+    # Handle single value
+    format_single <- function(val) {
+      if (is.na(val)) return("Missing values")
+      
+      # Format in scientific notation
+      sci <- format(val, scientific = TRUE, digits = digits)
+      
+      # Parse the scientific notation
+      parts <- strsplit(sci, "e")[[1]]
+      
+      if (length(parts) == 1) {
+        # No exponent, just return the number
+        return(format(val, digits = digits, scientific = FALSE))
+      }
+      
+      mantissa <- as.numeric(parts[1])
+      exponent <- as.numeric(parts[2])
+      
+      # If exponent is 0 or 1, return unformatted value
+      if (exponent == 0) {
+        return(format(val, digits = digits, scientific = FALSE))
+      }
+      
+      # Create superscript for exponent
+      superscripts <- c("⁰", "¹", "²", "³", "⁴", "⁵", "⁶", "⁷", "⁸", "⁹", "⁻")
+      
+      # Convert exponent to superscript
+      exp_str <- as.character(abs(exponent))
+      exp_super <- paste0(sapply(strsplit(exp_str, "")[[1]], function(d) {
+        superscripts[as.numeric(d) + 1]
+      }), collapse = "")
+      
+      # Add minus sign if negative
+      if (exponent < 0) {
+        exp_super <- paste0("⁻", exp_super)
+      }
+      
+      # Return formatted string
+      paste0(format(mantissa, digits = digits, nsmall = 1), " × 10", exp_super)
+    }
+    
+    # Handle vector or single value
+    if (length(x) > 1) {
+      return(sapply(x, format_single))
+    } else {
+      return(format_single(x))
+    }
+  }
+  
+  
   pec_swater_cz <- leaflet(options = leafletOptions()) |> 
     addMapPane(name = "vect_riv",
                zIndex = 410) |> 
@@ -793,17 +869,22 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
                  color = "blue",
                  weight = 0.5,
                  opacity = 1,
-                 options = pathOptions(pane = "vect_riv")) |> 
-    addPolygons(data = basins_cz,
-                fillColor = "grey",
-                fillOpacity = 0.125,
-                stroke = T,
-                color = "black",
-                dashArray = "line",
+                 options = pathOptions(pane = "vect_riv"),
+                 group = "River network") |> 
+    addPolygons(data = basins_distr_cz[c("HYBAS_ID", "NAZ_LAU1")],
                 weight = 0.5,
                 opacity = 1,
-                options = pathOptions(pane = "vect_bas")) |> 
-    addRasterImage(conc_rivseg_agg_rast_cz[1],
+                fillColor = "#1f78b4",
+                fillOpacity = 0.15,
+                color = "black",
+                highlightOptions = highlightOptions(color = "black",
+                                                    weight = 3,
+                                                    bringToFront = TRUE),
+                popup = paste0("<b>Catchment ID: ", basins_distr_cz$HYBAS_ID ,"</b><br>",
+                               "<b>District: ",basins_distr_cz$NAZ_LAU1 ,"</b>"),
+                options = pathOptions(pane = "vect_bas"),
+                group = "River basins") |> 
+    addRasterImage(conc_rivseg_agg_rast_cz,
                    colors = color_palette_rast,
                    opacity = 1,
                    group = "Stream level",
@@ -811,7 +892,7 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
     addLegend(pal = color_palette_rast_rev,
               values = values(conc_rivseg_agg_rast_cz),
               title = paste0(conc_rivseg_agg_vect_cz$Active.substance |> unique(),
-                             " PEC<sub>annual</sub> surface water at stream level<br>(\u00B5g\u00D7dm\u207B\u00B3)"),
+                             " PEC<sub>annual</sub> surface water<br>at stream level (\u00B5g\u00D7dm\u207B\u00B3)"),
               position = "bottomright",
               group = "Stream level",
               labFormat = function(type, cuts, p) {
@@ -846,11 +927,11 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
                                "<b>Total length of streams receiving pesticides (km): ",
                                conc_rivseg_agg_vect_cz[,6] |>
                                  pull(),
-                               "<br></b>")) |> 
+                               "</b>")) |> 
     addLegend(pal = color_palette_vect_rev,
               values = values(conc_rivseg_agg_vect_cz[,2]),
               title = paste0(conc_rivseg_agg_vect_cz$Active.substance |> unique(),
-                             " PEC<sub>annual</sub> surface water at basin level<br>(\u00B5g\u00D7dm\u207B\u00B3)"),
+                             " PEC<sub>annual</sub> surface water<br>at basin level (\u00B5g\u00D7dm\u207B\u00B3)"),
               position = "bottomright",
               group = 'Basin level',
               labFormat = function(type, cuts, p) {
@@ -860,10 +941,10 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
                        " to ", 
                        sapply(cuts[-n], format_power10, digits = 2))
               }) |> 
-    addLayersControl(overlayGroups = c("Stream level", "Basin level"),
+    addLayersControl(overlayGroups = c("Basin level", "Stream level", "River basins", "River network"),
                      baseGroups = c("Esri World Topo Map"),
                      options = layersControlOptions(collapsed = F, autoZIndex = T)) |> 
-    hideGroup("Stream level") |> 
+    hideGroup(c("Stream level", "River basins", "River network")) |> 
     addScaleBar(position = "bottomright") |> 
     addControl(html = paste0("<div style='background-color: rgba(255, 255, 255, 0.9);
                              padding: 6px 6px; border-radius: 4px; font-size: 14px; font-weight: bold; color: #333; max-width: 800px;
@@ -891,13 +972,13 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
     }
   ")
   
-  # pec_swater_cz |> saveWidget(paste0(conc_rivseg_agg_vect_cz$Active.substance |> unique(), "CZ_PEC_365_Water.html"))
-  return(pec_swater_cz)
+  pec_swater_cz |> saveWidget(paste0("CZ_", conc_rivseg_agg_vect_cz$Active.substance |> unique(), "_PEC_365_Water.html"))
+  # return(pec_swater_cz)
 }
 
 pec_streams_to_basin_cz(conc_rivseg_agg_rast_cz[1], conc_rivseg_agg_vect_cz[[1]])
-pec_streams_to_basin_cz(conc_rivseg_agg_rast_cz[3], conc_rivseg_agg_vect_cz[[3]], conc_acsubst_river_seg_cz[[3]])
-pec_streams_to_basin_cz(conc_rivseg_agg_rast_cz[3], conc_rivseg_agg_vect_cz[[3]], conc_acsubst_river_seg_cz[[3]])
+pec_streams_to_basin_cz(conc_rivseg_agg_rast_cz[2], conc_rivseg_agg_vect_cz[[2]])
+pec_streams_to_basin_cz(conc_rivseg_agg_rast_cz[3], conc_rivseg_agg_vect_cz[[3]])
 
 
 #################################################################
