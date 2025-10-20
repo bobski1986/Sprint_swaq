@@ -20,9 +20,10 @@ nuts3_cz <- nuts |>
 nuts1_cz <- nuts |>
   filter(CNTR_CODE == "CZ" & LEVL_CODE == 1) 
 
-districts <- okresy("low")|>
-  mutate(NAZ_LAU1 = str_to_title((gsub("-", " ", NAZ_LAU1, fixed = TRUE)))) |>
-  vect()
+districts_cz <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_4326.gpkg") |> 
+  vect() |> 
+  filter(CNTR_CODE == "CZ")
+
 # Define the approximate bounding box for country in EPSG:32631 coordinates.
 crs_utm31n_cz <- "EPSG:32633"
 
@@ -72,13 +73,13 @@ basins_cz <- dir_ls(path_home_r(), recurse = T, regexp = "hydrosheds_lvl09_basin
          "snd_pc_uav",
          "soc_th_uav") |>
   tidyterra::mutate(SUB_AREA_ha = SUB_AREA * 100,
-                    HYBAS_ID = as.character(HYBAS_ID)) |>
-  mask(vect(RCzechia::republika())) 
+                    HYBAS_ID = as.character(HYBAS_ID)) |> 
+  mask(districts_cz)
 
 budens_jrc_cz_bas <- zonal(budens_jrc_cz, basins_cz, "mean", as.polygons = T, na.rm = T) |>
   select(HYBAS_ID, budens_jrc_CZ)
 
-basins_distr_cz <-  basins_cz |>
+basins_cz <-  basins_cz |>
   left_join(budens_jrc_cz_bas |>
               values(),
             by = "HYBAS_ID") |>
@@ -87,8 +88,7 @@ basins_distr_cz <-  basins_cz |>
                     mass_soil_t3_ha = vol_soil_m3_ha * budens_jrc_CZ,
                     oc_perc = (soc_th_uav/mass_soil_t3_ha) * 100,
                     area_basins_cz_ha = basins_cz |>
-                      expanse("ha")) |> 
-  terra::intersect(districts[,3])
+                      expanse("ha"))
   
 
 # Add crop specific spray drift values to the "gemap"
@@ -373,11 +373,11 @@ writeVector(vect(all_as_basin_cz), "3chem_pec365_topsoil_basin_cz.gpkg", overwri
 ########### START: Pesticide topsoil Map #################
 ##########################################################
 
-conc_soil_agg_rast_cz_1 <- dir_ls(path = path_home_r(), regexp = "Acetamiprid_pec365_topsoil_farm_cz.nc", recurse = T) |> rast()
-conc_soil_agg_rast_cz_2 <- dir_ls(path = path_home_r(), regexp = "Glyphosate_pec365_topsoil_farm_cz.nc", recurse = T) |> rast()
-conc_soil_agg_rast_cz_3 <- dir_ls(path = path_home_r(), regexp = "Tebuconazole_pec365_topsoil_farm_cz.nc", recurse = T) |> rast()
+conc_soil_agg_rast_cz_1 <- dir_ls(path = path_home_r(), regexp = "Acetamiprid_pecini_topsoil_farm_cz.nc", recurse = T) |> rast()
+conc_soil_agg_rast_cz_2 <- dir_ls(path = path_home_r(), regexp = "Glyphosate_pecini_topsoil_farm_cz.nc", recurse = T) |> rast()
+conc_soil_agg_rast_cz_3 <- dir_ls(path = path_home_r(), regexp = "Tebuconazole_pecini_topsoil_farm_cz.nc", recurse = T) |> rast()
 conc_soil_agg_rast_cz <- sprc(conc_soil_agg_rast_cz_1, conc_soil_agg_rast_cz_2, conc_soil_agg_rast_cz_3)
-conc_soil_agg_vect_cz <- dir_ls(path = path_home_r(), regexp = "3chem_pec365_topsoil_basin_cz.gpkg", recurse = T) |> vect() |> split("Active.substance")
+conc_soil_agg_vect_cz <- dir_ls(path = path_home_r(), regexp = "3chem_pecini_topsoil_basin_cz.gpkg", recurse = T) |> vect() |> split("Active.substance")
 
 # PEC soil maps
 pec_field_to_basin_cz <- function(conc_soil_agg_rast_cz, conc_soil_agg_vect_cz) {
@@ -466,33 +466,50 @@ pec_field_to_basin_cz <- function(conc_soil_agg_rast_cz, conc_soil_agg_vect_cz) 
   pec_soil_cz <- leaflet(options = leafletOptions()) |> 
     addMapPane(name = "vect_bas",
                zIndex = 410) |> 
-    addMapPane(name = "rast_conc",
+    addMapPane(name = "vect_lau",
                zIndex = 420) |> 
-    addMapPane(name = "vect_conc",
+    addMapPane(name = "rast_conc",
                zIndex = 430) |> 
+    addMapPane(name = "vect_conc",
+               zIndex = 440) |> 
     addProviderTiles(providers$Esri.WorldTopoMap,
                      options = providerTileOptions(minZoom = 0, maxZoom = 18),
                      group = "Esri World Topo Map") |> 
-    addPolygons(data = basins_cz,
-                fillColor = "grey",
-                fillOpacity = 0.125,
-                stroke = T,
-                color = "black",
-                dashArray = "line",
+    addPolygons(data = basins_cz["HYBAS_ID"],
                 weight = 0.5,
-                opacity = 1,
-                options = pathOptions(pane = "vect_bas")) |>
+                opacity = 0.75,
+                fillColor = "grey",
+                fillOpacity = 0.1,
+                color = "black",
+                highlightOptions = highlightOptions(color = "black",
+                                                    weight = 3,
+                                                    bringToFront = TRUE),
+                popup = paste0("<b>Catchment ID: ", basins_cz$HYBAS_ID ,"</b>"),
+                options = pathOptions(pane = "vect_bas"),
+                group = "River basins") |>
+    addPolygons(data = districts_cz["LAU_NAME"],
+                weight = 0.5,
+                opacity = 0.75,
+                fillColor = "grey",
+                fillOpacity = 0.1,
+                color = "black",
+                highlightOptions = highlightOptions(color = "black",
+                                                    weight = 3,
+                                                    bringToFront = TRUE),
+                popup = paste0("<b>District (LAU): ",districts_cz$LAU_NAME,"</b>"),
+                options = pathOptions(pane = "vect_lau"),
+                group = "Districts (LAU)") |>
     addRasterImage(conc_soil_agg_rast_cz,
                    colors = color_palette_rast,
                    opacity = 1,
-                   group = "Field level",
+                   group = "Field level concentration",
                    options = pathOptions(pane = "rast_conc")) |> 
     addLegend(pal = color_palette_rast_rev,
               values = values(conc_soil_agg_rast_cz),
               title = paste0(conc_soil_agg_vect_cz$Active.substance |> unique(),"\n",
-                             " PEC<sub>365-day</sub> soil at field level<br>(time-weighted) (µg × kg⁻¹)"),
+                             " PEC<sub>initial</sub> soil at field level<br>(time-weighted) (µg × kg⁻¹)"),
               position = "bottomright",
-              group = "Field level",
+              group = "Field level concentration",
               labFormat = function(type, cuts, p) {
                 n <- length(cuts)
                 cuts <- sort(cuts, decreasing = TRUE)
@@ -508,13 +525,13 @@ pec_field_to_basin_cz <- function(conc_soil_agg_rast_cz, conc_soil_agg_vect_cz) 
                 color = "black",
                 weight = 0.5,
                 opacity = 1,
-                group = "Basin level",
+                group = "Basin level concentration",
                 options = pathOptions(pane = "vect_conc"),
                 highlightOptions = highlightOptions(color = "black",
                                                     weight = 3,
                                                     bringToFront = TRUE),
                 popup = paste0("<b>",
-                               "Median PEC<sub>365-day</sub> soil (µg × kg⁻¹): ",
+                               "Median PEC<sub>initial</sub> soil (µg × kg⁻¹): ",
                                format_power10(conc_soil_agg_vect_cz[,2] |>
                                         pull(),
                                       digits = 3),
@@ -531,9 +548,9 @@ pec_field_to_basin_cz <- function(conc_soil_agg_rast_cz, conc_soil_agg_vect_cz) 
     addLegend(pal = color_palette_vect_rev,
               values = values(conc_soil_agg_vect_cz[,2]),
               title = paste0(conc_soil_agg_vect_cz$Active.substance |> unique(),"\n",
-                             " PEC<sub>365-day</sub> soil at basin level<br>(time- and area-weighted) (µg × kg⁻¹)"),
+                             " PEC<sub>initial</sub> soil at basin level<br>(time- and area-weighted) (µg × kg⁻¹)"),
               position = "bottomright",
-              group = 'Basin level',
+              group = 'Basin level concentration',
               labFormat = function(type, cuts, p) {
                 n <- length(cuts)
                 cuts <- sort(cuts, decreasing = TRUE)
@@ -541,16 +558,16 @@ pec_field_to_basin_cz <- function(conc_soil_agg_rast_cz, conc_soil_agg_vect_cz) 
                        " to ", 
                        sapply(cuts[-n], format_power10, digits = 2))
               }) |> 
-    addLayersControl(overlayGroups = c("Field level", "Basin level"),
+    addLayersControl(overlayGroups = c("Basin level concentration", "Field level concentration", "Districts (LAU)", "River basins"),
                      baseGroups = c("Esri World Topo Map"),
                      options = layersControlOptions(collapsed = F, autoZIndex = T)) |> 
-    hideGroup("Field level") |> 
+    hideGroup(c("Field level concentration", "Districts (LAU)", "River basins")) |> 
     addScaleBar(position = "bottomright") %>%
     addControl(html = paste0("<div style='background-color: rgba(255, 255, 255, 0.9);
                              padding: 6px 6px; border-radius: 4px; font-size: 14px; font-weight: bold; color: #333; max-width: 800px;
                              line-height: 1.4;'>",
                              conc_soil_agg_vect_cz$Active.substance |> unique(),
-                             " 365-day PEC soil after 1x application in July in Czech Republic", 
+                             " initial PEC soil after 1x application in July in Czech Republic", 
                              "</div>"),
                position = "topleft") |> 
     addControl(html = "", position = "bottomleft") %>%
@@ -572,10 +589,9 @@ pec_field_to_basin_cz <- function(conc_soil_agg_rast_cz, conc_soil_agg_vect_cz) 
     }
   ")
   
-  pec_soil_cz |> saveWidget(paste0("CZ_", conc_soil_agg_vect_cz$Active.substance |> unique(), "_PEC_365_Soil.html"))
+  pec_soil_cz |> saveWidget(paste0("CZ_", conc_soil_agg_vect_cz$Active.substance |> unique(), "_PEC_ini_Soil.html"))
   # return(pec_soil_cz)
 }
-
 
 pec_field_to_basin_cz(conc_soil_agg_rast_cz[1], conc_soil_agg_vect_cz[[1]])
 pec_field_to_basin_cz(conc_soil_agg_rast_cz[2], conc_soil_agg_vect_cz[[2]])
@@ -649,13 +665,13 @@ rivers_cz <- dir_ls(path_home_r(), recurse = T, regexp = "WatrcrsL.shp$") |>
 # cat("\nProcessing complete.\n")
 # 
 # writeVector(farm_rivers_buff_bas_cz |> svc() |> vect(), "water_network_farmbuff100_12_CZ.gpkg")
-# writeVector(rivers_buff_cz |> svc() |> vect(), "rivers_buff_cz.gpkg")
+# writeVector(rivers_buff_cz |> svc() |> vect(), "rivers_buff100_cz.gpkg")
 
 # Import intersected river network and parcel data 
 rivers_farm_buff_cz <- dir_ls(path_home_r(), recurse = T, regexp = "water_network_farmbuff100_12_CZ.gpkg") |> 
   vect()
 
-rivers_buff_cz  <- dir_ls(path_home_r(), recurse = T, regexp = "rivers_buff_cz.gpkg") |> 
+rivers_buff_cz <- dir_ls(path_home_r(), recurse = T, regexp = "rivers_buff100_cz.gpkg") |> 
   vect()
 
 # Sum total length of stream for each river basin
@@ -766,7 +782,7 @@ writeVector(vect(conc_rivseg_agg_vect_cz), "3chem_pec365_swater_seg_basin_cz.gpk
 conc_rivseg_agg_rast_cz_1 <- dir_ls(path = path_home_r(), regexp = "Acetamiprid_pec365_swater_seg_cz.nc", recurse = T) |> rast()
 conc_rivseg_agg_rast_cz_2 <- dir_ls(path = path_home_r(), regexp = "Glyphosate_pec365_swater_seg_cz.nc", recurse = T) |> rast()
 conc_rivseg_agg_rast_cz_3 <- dir_ls(path = path_home_r(), regexp = "Tebuconazole_pec365_swater_seg_cz.nc", recurse = T) |> rast()
-conc_rivseg_agg_rast_cz <- sprc(conc_rivseg_agg_rast_cz_1, conc_rivseg_agg_rast_cz_1, conc_rivseg_agg_rast_cz_1)
+conc_rivseg_agg_rast_cz <- sprc(conc_rivseg_agg_rast_cz_1, conc_rivseg_agg_rast_cz_2, conc_rivseg_agg_rast_cz_3)
 conc_rivseg_agg_vect_cz <- dir_ls(path = path_home_r(), regexp = "3chem_pec365_swater_seg_basin_cz.gpkg", recurse = T) |> vect() |> split("Active.substance")
 
 pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vect_cz) {
@@ -858,10 +874,12 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
                zIndex = 410) |> 
     addMapPane(name = "vect_bas",
                zIndex = 420) |> 
-    addMapPane(name = "rast_conc",
+    addMapPane(name = "vect_lau",
                zIndex = 430) |> 
-    addMapPane(name = "vect_conc",
+    addMapPane(name = "rast_conc",
                zIndex = 440) |> 
+    addMapPane(name = "vect_conc",
+               zIndex = 450) |> 
     addProviderTiles(providers$Esri.WorldTopoMap,
                      options = providerTileOptions(minZoom = 0, maxZoom = 18),
                      group = "Esri World Topo Map") |> 
@@ -871,30 +889,41 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
                  opacity = 1,
                  options = pathOptions(pane = "vect_riv"),
                  group = "River network") |> 
-    addPolygons(data = basins_distr_cz[c("HYBAS_ID", "NAZ_LAU1")],
+    addPolygons(data = basins_cz["HYBAS_ID"],
                 weight = 0.5,
-                opacity = 1,
-                fillColor = "#1f78b4",
-                fillOpacity = 0.15,
+                opacity = 0.75,
+                fillColor = "grey",
+                fillOpacity = 0.1,
                 color = "black",
                 highlightOptions = highlightOptions(color = "black",
                                                     weight = 3,
                                                     bringToFront = TRUE),
-                popup = paste0("<b>Catchment ID: ", basins_distr_cz$HYBAS_ID ,"</b><br>",
-                               "<b>District: ",basins_distr_cz$NAZ_LAU1 ,"</b>"),
+                popup = paste0("<b>Catchment ID: ", basins_cz$HYBAS_ID ,"</b>"),
                 options = pathOptions(pane = "vect_bas"),
-                group = "River basins") |> 
+                group = "River basins") |>
+    addPolygons(data = districts_cz["LAU_NAME"],
+                weight = 0.5,
+                opacity = 0.75,
+                fillColor = "grey",
+                fillOpacity = 0.1,
+                color = "black",
+                highlightOptions = highlightOptions(color = "black",
+                                                    weight = 3,
+                                                    bringToFront = TRUE),
+                popup = paste0("<b>District (LAU): ",districts_cz$LAU_NAME,"</b>"),
+                options = pathOptions(pane = "vect_lau"),
+                group = "Districts (LAU)") |>
     addRasterImage(conc_rivseg_agg_rast_cz,
                    colors = color_palette_rast,
                    opacity = 1,
-                   group = "Stream level",
+                   group = "Stream level concentration",
                    options = pathOptions(pane = "rast_conc")) |> 
     addLegend(pal = color_palette_rast_rev,
               values = values(conc_rivseg_agg_rast_cz),
               title = paste0(conc_rivseg_agg_vect_cz$Active.substance |> unique(),
                              " PEC<sub>annual</sub> surface water<br>at stream level (\u00B5g\u00D7dm\u207B\u00B3)"),
               position = "bottomright",
-              group = "Stream level",
+              group = "Stream level concentration",
               labFormat = function(type, cuts, p) {
                 n <- length(cuts)
                 cuts <- sort(cuts, decreasing = TRUE)
@@ -910,7 +939,7 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
                 color = "black",
                 weight = 0.5,
                 opacity = 1,
-                group = "Basin level",
+                group = "Basin level concentration",
                 options = pathOptions(pane = "vect_conc"),
                 highlightOptions = highlightOptions(color = "black",
                                                     weight = 3,
@@ -933,7 +962,7 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
               title = paste0(conc_rivseg_agg_vect_cz$Active.substance |> unique(),
                              " PEC<sub>annual</sub> surface water<br>at basin level (\u00B5g\u00D7dm\u207B\u00B3)"),
               position = "bottomright",
-              group = 'Basin level',
+              group = 'Basin level concentration',
               labFormat = function(type, cuts, p) {
                 n <- length(cuts)
                 cuts <- sort(cuts, decreasing = TRUE)
@@ -941,10 +970,10 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
                        " to ", 
                        sapply(cuts[-n], format_power10, digits = 2))
               }) |> 
-    addLayersControl(overlayGroups = c("Basin level", "Stream level", "River basins", "River network"),
+    addLayersControl(overlayGroups = c("Basin level concentration", "Stream level concentration", "Districts (LAU)", "River basins", "River network"),
                      baseGroups = c("Esri World Topo Map"),
                      options = layersControlOptions(collapsed = F, autoZIndex = T)) |> 
-    hideGroup(c("Stream level", "River basins", "River network")) |> 
+    hideGroup(c("Stream level concentration", "Districts (LAU)", "River basins concentration", "River basins", "River network")) |> 
     addScaleBar(position = "bottomright") |> 
     addControl(html = paste0("<div style='background-color: rgba(255, 255, 255, 0.9);
                              padding: 6px 6px; border-radius: 4px; font-size: 14px; font-weight: bold; color: #333; max-width: 800px;
@@ -979,7 +1008,6 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
 pec_streams_to_basin_cz(conc_rivseg_agg_rast_cz[1], conc_rivseg_agg_vect_cz[[1]])
 pec_streams_to_basin_cz(conc_rivseg_agg_rast_cz[2], conc_rivseg_agg_vect_cz[[2]])
 pec_streams_to_basin_cz(conc_rivseg_agg_rast_cz[3], conc_rivseg_agg_vect_cz[[3]])
-
 
 #################################################################
 ########### END: Pesticide surface water map ####################
