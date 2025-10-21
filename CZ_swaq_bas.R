@@ -1,5 +1,18 @@
-pkg <- c("tidyverse", "fs", "readxl", "terra", "tmap", "OpenStreetMap", "maptiles", "tidyterra", "sf", "data.table", "fuzzyjoin", "openxlsx",
-         "EnvStats", "leaflet", "htmltools", "htmlwidgets", "RColorBrewer", "progress", "RCzechia")
+pkg <- c("tidyverse",
+         "fs", 
+         "readxl",
+         "terra",
+         "OpenStreetMap",
+         "tidyterra",
+         "sf",
+         "data.table",
+         "openxlsx",
+         'ncdf4',
+         "leaflet",
+         "htmltools",
+         "htmlwidgets",
+         "RColorBrewer",
+         "progress")
 
 for (i in pkg) {
   if (!requireNamespace(i, quietly = TRUE)) { 

@@ -12,7 +12,6 @@ pkg <- c("tidyverse",
          "htmltools",
          "htmlwidgets",
          "RColorBrewer",
-         "giscoR",
          "progress")
 
 for (i in pkg) {
@@ -288,7 +287,7 @@ for(i in seq_along(pest_twc_as_basin_dk)){
                                  basins_dk[c("HYBAS_ID")],
                                  fun = "sum",
                                  as.polygons = T)
-  
+
   all_as_basin_dk[[i]] <- merge(conc_wmean_basin_dk[[i]], area_farm_basin_dk[[i]] |> as.data.table(), by = "HYBAS_ID") |> 
     merge(nr_farm_basin_dk[[i]] |> as.data.table(), by = "HYBAS_ID") |>
     # terra::na.omit("HYBAS_ID") |> 
@@ -733,7 +732,7 @@ writeVector(vect(conc_rivseg_agg_vect_dk), "3chem_pec365_swater_seg_basin_dk.gpk
 conc_rivseg_agg_rast_dk_1 <- dir_ls(path = path_home_r(), regexp = "Acetamiprid_pec365_swater_seg_dk.nc", recurse = T) |> rast()
 conc_rivseg_agg_rast_dk_2 <- dir_ls(path = path_home_r(), regexp = "Glyphosate_pec365_swater_seg_dk.nc", recurse = T) |> rast()
 conc_rivseg_agg_rast_dk_3 <- dir_ls(path = path_home_r(), regexp = "Tebuconazole_pec365_swater_seg_dk.nc", recurse = T) |> rast()
-conc_rivseg_agg_rast_dk <- sprc(conc_rivseg_agg_rast_dk_1, conc_rivseg_agg_rast_dk_1, conc_rivseg_agg_rast_dk_1)
+conc_rivseg_agg_rast_dk <- sprc(conc_rivseg_agg_rast_dk_1, conc_rivseg_agg_rast_dk_2, conc_rivseg_agg_rast_dk_3)
 conc_rivseg_agg_vect_dk <- dir_ls(path = path_home_r(), regexp = "3chem_pec365_swater_seg_basin_dk.gpkg", recurse = T) |> vect() |> split("Active.substance")
 
 # PEC surface water live maps
@@ -907,7 +906,7 @@ pec_streams_to_basin_dk <- function(conc_rivseg_agg_rast_dk, conc_rivseg_agg_vec
                                  pull(), 
                                "<br></b>",
                                "<b>Total length of streams receiving pesticides (km): ",
-                               conc_rivseg_agg_vect_dk[,6] |>
+                               conc_rivseg_agg_vect_dk[,3] |>
                                  pull(),
                                "</b>")) |> 
     addLegend(pal = color_palette_vect_rev,
