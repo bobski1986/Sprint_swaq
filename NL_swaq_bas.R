@@ -22,6 +22,9 @@ for (i in pkg) {
 
 lapply(pkg, library, character.only = T)
 
+# Switch terra options to show progress bar for spatial operations
+terraOptions(progress = 1)
+
 # Data import for the Netherlands
 # NUTS regions
 nuts <- dir_ls(path_home_r(), recurse = T, regexp = "/NUTS_RG_20M_2024_4326.shp$")  |>
@@ -660,8 +663,8 @@ pec_field_to_basin_nl(conc_soil_agg_rast_nl[3], conc_soil_agg_vect_nl[[3]])
 
 
 # Read dutch river network data from the country geoportal
-rivers_nl <- dir_ls(path_home_r(), recurse = T, regexp = "water_network_12_NL.gpkg") |> 
-  vect()
+# rivers_nl <- dir_ls(path_home_r(), recurse = T, regexp = "water_network_12_NL.gpkg") |> 
+  # vect()
 
 # River buffers
 
@@ -686,7 +689,7 @@ rivers_nl <- dir_ls(path_home_r(), recurse = T, regexp = "water_network_12_NL.gp
 #     buffer(100)
 # 
 #   current_farm_rivers_buff <- terra::intersect(
-#     pest_twc_as_farm_nl[c("EC_trans_n", "acsubst_name", "srunoff_load", "dis_m3_pyr", "sdrift_dist_m")],
+#     pest_twc_as_farm_nl[c("EC_trans_n", "acsubst", "srunoff_load", "dis_m3_pyr", "sdrift_dist_m")],
 #     current_rivers_buff
 #   )
 # 
@@ -713,10 +716,14 @@ rivers_nl <- dir_ls(path_home_r(), recurse = T, regexp = "water_network_12_NL.gp
 # cat("\nProcessing complete.\n")
 # 
 # writeVector(farm_rivers_buff_bas_nl |> svc() |> vect(), "water_network_farmbuff100_12_NL.gpkg")
+# writeVector(rivers_buff_nl |> svc() |> vect(), "rivers_buff100_nl.gpkg")
 
 
 # Import intersected river network and parcel data 
 rivers_farm_buff_nl <- dir_ls(path_home_r(), recurse = T, regexp = "water_network_farmbuff100_12_NL.gpkg") |> 
+  vect()
+
+rivers_buff_nl <- dir_ls(path_home_r(), recurse = T, regexp = "rivers_buff100_nl.gpkg") |> 
   vect()
 
 # Sum total length of stream for each river basin
@@ -733,50 +740,38 @@ conc_acsubst_river_seg_nl <- rivers_farm_buff_nl |>
   mutate(segment_weight = length_m/length_tot_bas_m) |> 
   mutate(conc_river_seg_ug.dm3 = srunoff_load/(dis_m3_pyr*1000),
          conc_river_seg_w_ug.dm3 = conc_river_seg_ug.dm3*segment_weight) |>
-  terra::split("acsubst_name")
+  terra::split("acsubst")
 
 # Aggregate pesticide concentration in streams for each crop and river basin
 conc_rivseg_agg_nl <- svc(aggregate(conc_acsubst_river_seg_nl[[1]][c("EC_trans_n",  "HYBAS_ID" , "conc_river_seg_ug.dm3")],
                                     c("HYBAS_ID", "EC_trans_n"),
-                                    fun = "sum"),
+                                    fun = "sum") |> 
+                            zonal(rivers_buff_nl, as.polygons = T),
                           aggregate(conc_acsubst_river_seg_nl[[2]][c("EC_trans_n",  "HYBAS_ID" ,  "conc_river_seg_ug.dm3")],
                                     c("HYBAS_ID", "EC_trans_n"),
-                                    fun = "sum"),
+                                    fun = "sum") |> 
+                            zonal(rivers_buff_nl, as.polygons = T),
                           aggregate(conc_acsubst_river_seg_nl[[3]][c("EC_trans_n",  "HYBAS_ID" , "conc_river_seg_ug.dm3")],
                                     c("HYBAS_ID", "EC_trans_n"),
-                                    fun = "sum"))
+                                    fun = "sum") |> 
+                            zonal(rivers_buff_nl, as.polygons = T))
 
 # Rasterise aggregated concentration values for each chemical
 conc_rivseg_agg_rast_nl <- sprc(rasterize(project(conc_rivseg_agg_nl[[1]],
                                                   crs("EPSG:32631")),
-                                          project(budens_jrc_nl, crs("EPSG:32631")),
+                                          empty_raster_nl,
                                           field = "sum_conc_river_seg_ug.dm3",
-                                          touches = T) |> 
-                                  zonal(project(conc_rivseg_agg_nl[[1]],
-                                                crs("EPSG:32631")),
-                                        fun = "median",
-                                        touches = T,
-                                        as.raster = T),
+                                          touches = T),
                                 rasterize(project(conc_rivseg_agg_nl[[2]],
                                                crs("EPSG:32631")),
-                                       project(budens_jrc_nl, crs("EPSG:32631")),
+                                          empty_raster_nl,
                                        field = "sum_conc_river_seg_ug.dm3",
-                                       touches = T) |> 
-                               zonal(project(conc_rivseg_agg_nl[[2]],
-                                             crs("EPSG:32631")), 
-                                     fun = "median",
-                                     touches = T,
-                                     as.raster = T),
+                                       touches = T),
                              rasterize(project(conc_rivseg_agg_nl[[3]],
                                                crs("EPSG:32631")),
-                                       project(budens_jrc_nl, crs("EPSG:32631")),
+                                       empty_raster_nl,
                                        field = "sum_conc_river_seg_ug.dm3",
-                                       touches = T) |> 
-                               zonal(project(conc_rivseg_agg_nl[[3]],
-                                             crs("EPSG:32631")),
-                                     fun = "median",
-                                     touches = T,
-                                     as.raster = T)) 
+                                       touches = T)) 
 
 # Create vector layers of aggregated pesticide concentration in streams for each respective basin level
 conc_wmean_river_basin_nl <- list()
@@ -786,7 +781,7 @@ conc_rivseg_agg_vect_nl <- list()
 
 for(i in seq_along(conc_acsubst_river_seg_nl)){
   
-  cat("\r", unique(values(conc_acsubst_river_seg_nl[[i]]["acsubst_name"]))[1,1],
+  cat("\r", unique(values(conc_acsubst_river_seg_nl[[i]]["acsubst"]))[1,1],
       "is being processed out of",
       seq_along(conc_acsubst_river_seg_nl) |> max(), 
       "ASs.",
@@ -812,7 +807,7 @@ for(i in seq_along(conc_acsubst_river_seg_nl)){
                                         as.data.table(), by = "HYBAS_ID") |> 
     left_join(nr_river_buffer_basin_nl[[i]], by = "HYBAS_ID") |>
     # terra::na.omit("HYBAS_ID") |> 
-    mutate("Active substance" = unique(values(conc_acsubst_river_seg_nl[[i]]["acsubst_name"]))[1,1],
+    mutate("Active substance" = unique(values(conc_acsubst_river_seg_nl[[i]]["acsubst"]))[1,1],
            length_km = round(length_m/1000, 2),
            conc_river_seg_w_ug.dm3 = conc_river_seg_w_ug.dm3*1000) |> 
     tidyterra::rename("Basin ID" = HYBAS_ID,
@@ -830,7 +825,6 @@ writeVector(vect(conc_rivseg_agg_vect_nl), "3chem_pec365_swater_seg_basin_nl.gpk
 #########################################################################
 ########### END: Pesticide concentration in surface water ###############
 #########################################################################
-
 
 ###################################################################
 ########### START: Pesticide surface water map ####################
@@ -876,7 +870,7 @@ color_palette_vect_rev <- colorBin(palette = "BuPu",
                                reverse = T, 
                                na.color = "#ffdeaf")
 
-pec_swater_nl <- leaflet(options = leafletOptions(zoomControl = F)) %>%
+pec_swater_nl <- leaflet(options = leafletOptions(zoomControl = F)) |> 
   addMapPane(name = "vect_bas",
              zIndex = 410) |> 
   addMapPane(name = "rast_conc",
@@ -885,7 +879,7 @@ pec_swater_nl <- leaflet(options = leafletOptions(zoomControl = F)) %>%
              zIndex = 430) |> 
   addProviderTiles(providers$Esri.WorldTopoMap,
                    options = providerTileOptions(minZoom = 0, maxZoom = 18),
-                   group = "Esri World Topo Map") %>%
+                   group = "Esri World Topo Map") |> 
   addPolygons(data = basins_nl,
               fillColor = "grey",
               fillOpacity = 0.05,
