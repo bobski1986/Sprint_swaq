@@ -687,6 +687,8 @@ rivers_farm_buff_cz <- dir_ls(path_home_r(), recurse = T, regexp = "water_networ
 rivers_buff_cz <- dir_ls(path_home_r(), recurse = T, regexp = "rivers_buff100_cz.gpkg") |> 
   vect()
 
+rivers_cz_rast <- project(rivers_cz, empty_raster_cz) |> rasterize(empty_raster_cz)
+
 # Sum total length of stream for each river basin
 river_length_tot_bas_cz <- rivers_cz |> 
   values() |> 
@@ -881,9 +883,8 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
     }
   }
   
-  
   pec_swater_cz <- leaflet(options = leafletOptions()) |> 
-    addMapPane(name = "vect_riv",
+    addMapPane(name = "rast_riv",
                zIndex = 410) |> 
     addMapPane(name = "vect_bas",
                zIndex = 420) |> 
@@ -896,17 +897,16 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
     addProviderTiles(providers$Esri.WorldTopoMap,
                      options = providerTileOptions(minZoom = 0, maxZoom = 18),
                      group = "Esri World Topo Map") |> 
-    addPolylines(data = rivers_cz,
-                 color = "blue",
-                 weight = 0.5,
-                 opacity = 1,
-                 options = pathOptions(pane = "vect_riv"),
-                 group = "River network") |> 
+    addRasterImage(rivers_cz_rast,
+                   color = "blue",
+                   opacity = 0.5,
+                   options = pathOptions(pane = "rast_riv"),
+                   group = "River network") |> 
     addPolygons(data = basins_cz["HYBAS_ID"],
                 weight = 0.5,
-                opacity = 0.75,
+                opacity = 0.5,
                 fillColor = "grey",
-                fillOpacity = 0.1,
+                fillOpacity = 0.25,
                 color = "black",
                 highlightOptions = highlightOptions(color = "black",
                                                     weight = 3,
@@ -916,9 +916,9 @@ pec_streams_to_basin_cz <- function(conc_rivseg_agg_rast_cz, conc_rivseg_agg_vec
                 group = "River basins") |>
     addPolygons(data = districts_cz["LAU_NAME"],
                 weight = 0.5,
-                opacity = 0.75,
+                opacity = 0.5,
                 fillColor = "grey",
-                fillOpacity = 0.1,
+                fillOpacity = 0.25,
                 color = "black",
                 highlightOptions = highlightOptions(color = "black",
                                                     weight = 3,
