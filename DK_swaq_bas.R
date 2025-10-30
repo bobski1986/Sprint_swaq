@@ -565,8 +565,10 @@ rivers_dk <- dir_ls(path_home_r(), recurse = T, regexp = "hydrosheds_rivers_eu.g
          "ORD_FLOW",
          "sgr_dk_rav",
          "riv_tc_csu") |>
-  tidyterra::mutate(WIDTH_M = (ria_ha_csu * 10000) / (LENGTH_KM *1000)) |>
-  tidyterra::rename(HYBAS_ID = HYBAS_L12)
+  tidyterra::rename(HYBAS_ID = HYBAS_L12) |> 
+  tidyterra::mutate(WIDTH_M = (ria_ha_csu * 10000) / (LENGTH_KM *1000),
+                    HYBAS_ID = as.character(HYBAS_ID))
+
 
 # River buffers
 
@@ -622,10 +624,12 @@ rivers_dk <- dir_ls(path_home_r(), recurse = T, regexp = "hydrosheds_rivers_eu.g
 
 # Import intersected river network and parcel data 
 rivers_farm_buff_dk <- dir_ls(path_home_r(), recurse = T, regexp = "water_network_farmbuff100_12_DK.gpkg") |> 
-  vect()
+  vect()|> 
+  mutate(HYBAS_ID = as.character(HYBAS_ID))
 
 rivers_buff_dk <- dir_ls(path_home_r(), recurse = T, regexp = "rivers_buff100_dk.gpkg") |> 
-  vect()
+  vect() |> 
+  mutate(HYBAS_ID = as.character(HYBAS_ID))
 
 rivers_dk_rast <- project(rivers_dk, empty_raster_dk) |> rasterize(empty_raster_dk)
 
@@ -645,34 +649,34 @@ conc_acsubst_river_seg_dk <- rivers_farm_buff_dk |>
   terra::split("acsubst")
 
 # Aggregate pesticide concentration in streams for each crop and river basin
-conc_rivseg_agg_dk <- svc(aggregate(conc_acsubst_river_seg_dk[[1]][c("acsubst", "EC_trans_n",  "HYBAS_ID" , "conc_river_seg_ug.dm3")],
+conc_rivseg_agg_dk <- svc(aggregate(conc_acsubst_river_seg_dk[[1]][c("acsubst", "EC_trans_n",  "HYBAS_ID" , "conc_river_seg_w_ug.dm3")],
                                     c("HYBAS_ID", "EC_trans_n"),
-                                    fun = "sum") |> 
-                            zonal(rivers_buff_dk, as.polygons = T),
-                          aggregate(conc_acsubst_river_seg_dk[[2]][c("acsubst", "EC_trans_n",  "HYBAS_ID" ,  "conc_river_seg_ug.dm3")],
+                                    fun = "median") |> 
+                            zonal(rivers_buff_dk, as.polygons = T, weighted = T),
+                          aggregate(conc_acsubst_river_seg_dk[[2]][c("acsubst", "EC_trans_n",  "HYBAS_ID" ,  "conc_river_seg_w_ug.dm3")],
                                     c("HYBAS_ID", "EC_trans_n"),
-                                    fun = "sum") |> 
-                            zonal(rivers_buff_dk, as.polygons = T),
-                          aggregate(conc_acsubst_river_seg_dk[[3]][c("acsubst", "EC_trans_n",  "HYBAS_ID" , "conc_river_seg_ug.dm3")],
+                                    fun = "median") |> 
+                            zonal(rivers_buff_dk, as.polygons = T, weighted = T),
+                          aggregate(conc_acsubst_river_seg_dk[[3]][c("acsubst", "EC_trans_n",  "HYBAS_ID" , "conc_river_seg_w_ug.dm3")],
                                     c("HYBAS_ID", "EC_trans_n"),
-                                    fun = "sum") |> 
-                            zonal(rivers_buff_dk, as.polygons = T))
+                                    fun = "median") |> 
+                            zonal(rivers_buff_dk, as.polygons = T, weighted = T))
 
-# Rasterise aggregated concentration values for each chemical
+# Rasterise aggregated concentration values in each river segment
 conc_rivseg_agg_rast_dk <- sprc(rasterize(project(conc_rivseg_agg_dk[[1]],
                                                   crs("EPSG:32631")),
                                           empty_raster_dk,
-                                          field = "sum_conc_river_seg_ug.dm3",
+                                          field = "median_conc_river_seg_w_ug.dm3",
                                           touches = T),
                                   rasterize(project(conc_rivseg_agg_dk[[2]],
                                                     crs("EPSG:32631")),
                                             empty_raster_dk,
-                                            field = "sum_conc_river_seg_ug.dm3",
+                                            field = "median_conc_river_seg_w_ug.dm3",
                                             touches = T),
                                 rasterize(project(conc_rivseg_agg_dk[[3]],
                                                   crs("EPSG:32631")),
                                           empty_raster_dk,
-                                          field = "sum_conc_river_seg_ug.dm3",
+                                          field = "median_conc_river_seg_w_ug.dm3",
                                                    touches = T)) 
 
 # Create vector layers of aggregated pesticide concentration in streams for each respective basin level
@@ -692,8 +696,8 @@ for(i in seq_along(conc_acsubst_river_seg_dk)){
   
   conc_wmean_river_basin_dk[[i]] <- zonal(conc_acsubst_river_seg_dk[[i]][,"conc_river_seg_w_ug.dm3"],
                                     basins_dk[c("HYBAS_ID")],
-                                    fun = "sum",
-                                    as.polygons = T)
+                                    weighted = T,
+                                    as.polygons = T) 
   
   lenght_river_buffer_basin_dk[[i]] <- zonal(conc_acsubst_river_seg_dk[[i]]["LENGTH_KM"],
                                    basins_dk[c("HYBAS_ID")],
