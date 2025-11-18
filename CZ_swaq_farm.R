@@ -1,4 +1,6 @@
-# Install and load packages
+#############################
+# Install and load packages #
+#############################
 pkg <- c("tidyverse",
          "fs",
          "readxl",
@@ -24,53 +26,86 @@ for (i in pkg) {
 
 lapply(pkg, library, character.only = T)
 
-# LAU DATA
-lau_cz <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_4326.gpkg") |>
+#################
+# Load datasets #
+#################
+
+# To load the data listed below, they should placed in the Documents on local storage
+
+# LAU data #
+# LAUs 2024. 6258 administrative units, Gisco 2024, https://gisco-services.ec.europa.eu/distribution/v2/.
+# These LAUs show territorial areas based on the degree of urbanisation (DEGURBA) classes: 1) urban areas: cities, towns and suburbs, and 2) rural areas
+lau_degurba_cz <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_4326.gpkg") |>
   vect() |> 
   filter(CNTR_CODE == "CZ")
 
-# Districts
-districts_cz <- RCzechia::okresy(resolution = "high") |>
+# LAUs 2025. 77 administrative units (Okresy) ČÚZK 2025, https://vdp.cuzk.cz/.
+# Old LAU_1 categories according to Eurostat
+lau_okres_cz <- RCzechia::okresy(resolution = "high") |>
   select(NAZ_LAU1) |>
   rename(LAU_NAME = NAZ_LAU1) |>
   vect()
 
-# Lapis map
-lapis_cz_path <- dir_ls(path_home_r(), recurse = T, regexp = "DPB_VEREJNY_GUI_2021-12-31_epsg4258.shp$")
-lapis_cz <- vect(lapis_cz_path) |> 
-  project(crs(lau_cz)) |> 
-    select(EKO, CTVEREC, ZKOD_DPB) |>
-  rename(ZKOD = ZKOD_DPB) |> 
-  filter(EKO == 0)
+# Lapis map 2021 #
+# Used for selecting parcels based on conventional or ecological farming classes.
+# This light version of the original data, contains only conventional farming (EKO = 0) parcels
+lapis_cz <- dir_ls(path_home_r(), recurse = T, regexp = "lapis_slim.gpkg") |> 
+  vect()
 
-# CZ sampling sites cooridnates
-site_id_cz <- c("F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10",
-                "F11", "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20",
-                "F21", "F22", "F23", "F24")
 
-site_id_lat_cz <- c(48.75428, 48.7651997, 49.5882283, 48.9971858, 48.8974494, 
-                    48.9203217, 49.5573031, 49.7089406, 49.7190786, 50.5149308,
-                    50.5392117, 50.4087597, 49.0598786, 49.0573903, 50.1286728,
-                    50.2487525, 50.22116, 49.7082947, 48.9869569, 49.6619561,
-                    49.7321864, 48.8276081, 48.8326775, 48.7364833)
+# River basin, Hydrosheds #
+# Polygons and attributes from the Hydrosheds dataset
+basins_cz <- dir_ls(path_home_r(), recurse = T, regexp = "hydrosheds_lvl10_basins_cz.gpkg") |>
+  vect()
 
-site_id_lon_cz <- c(16.9401214, 16.9324394, 17.1860597, 16.9157722, 16.0395308,
-                    15.9784944, 13.9029903, 14.8711725, 14.8851656, 16.196935,
-                    16.1935875, 14.1494492, 15.4676047, 15.4676261, 16.2425311,
-                    17.6263658, 15.9933244, 14.7895919, 17.0273617, 12.9795581,
-                    12.9605036, 16.5171839, 16.4857483, 16.9331583)
+# River network, CUZK #
+# River network 
+river_net <- dir_ls(path_home_r(), recurse = T, regexp = "WatrcrsL.shp$") |>
+  vect() |>
+  project(lau_okres_cz)
 
-site_coord_cz <- cbind(tibble(
-  site_id = site_id_cz,
-  long = site_id_lon_cz,
-  lat = site_id_lat_cz)) |> 
-  sf::st_as_sf(coords = c("long", "lat"), crs = st_crs(lau_cz)) |> 
-  vect() |> 
-  terra::intersect(lau_cz)
+# Terrain slope, FAO #
+terrain_slope <- dir_ls(path_home_r(), recurse = T, regexp = "/TerrainSlope_30as_cz.nc$") |>
+  rast()
 
-# Filter to only LAU units containing sampling sites
+# Organic carbon, ESDAC #
+organic_carbon <- dir_ls(path_home_r(),
+                             recurse = T,
+                             regexp ="OC_jrc_CZ.nc$") |> 
+  rast()
 
-# Define active substances to model
+# Sand content, ESDAC # 
+sand <- dir_ls(path_home_r(),
+                           recurse = T,
+                           regexp = "sand_jrc_CZ.nc$") |> 
+  rast()
+
+# Clay content, ESDAC # 
+clay <- dir_ls(path_home_r(),
+                           recurse = T,
+                           regexp = "clay_jrc_CZ.nc$") |> 
+  rast()
+  
+# Bulk density, ESDAC #
+bulk_dens <- dir_ls(path_home_r(),
+                             recurse = T,
+                             regexp = "budens_jrc_cz.nc$") |> 
+  rast()
+
+# GEMUP #
+# data are read from within the function for each LAU
+# This is lighter version of GEMUP, contains only data required to run the model
+
+###########################
+# Main function arguments #
+###########################
+# The arguments below can be used to define environmental scenarios and to run map_topsoil_riverwater() function
+#  map_topsoil_riverwater() is executed for each LAU and generates: 
+# - Individual maps per substance (soil PEC, soil RQ, water PEC, water RQ)
+# - Cumulative maps (soil RQ, water RQ)
+# - .csv files
+
+# List active substances#
 acsubst_name <- c("dimoxystrobin", "difenoconazole", "boscalid", "fluazinam", 
                   "prochloraz", "diquat", "azoxystrobin", "pethoxamid", 
                   "benzovindiflupyr", "tebuconazole", "quinmerac", 
@@ -85,14 +120,35 @@ acsubst_name <- c("dimoxystrobin", "difenoconazole", "boscalid", "fluazinam",
 # Check if all substances are in the PPDB script
 # ASs[which(!acsubst_name %in% ASs)]
 
-lau_name <- districts_cz[c(4:10), "LAU_NAME"]
+# Spatial extent #
+# Use lau_okres_cz or lau_derugba_cz
+# Change numbers in brackets to select area(s) 
+lau_name <- lau_okres_cz[11, "LAU_NAME"]
+
+# Year of simulation #
+# Remains unchanged
 sim_yr <- 2021
+
+# Starting month of simulation #
+# Can be changed
 app_month <- "July"
+
+# Simulation start date #
+# Used only for daily precipitation data
 # app_startday <- 1
+
+# End of simulation #
+# Can be changed
+# Does not depend on month
 endday <- 56
+
+# Buffer area around rivers #
+# Can be changed
 rivbuff_width <- 100
 
-# Function for simulating and visualising ASs concentration in topsoil on all fields and in riverwater buffer for one selected district #
+# Main function for simulating and visualising ASs concentration in topsoil on all fields and in riverwater buffer #
+# Run it only once to create "function object"
+# Don't change content in the curly brackets 
 map_topsoil_riverwater <- function(lau_name,
                                    acsubst_name,
                                    app_month,
@@ -101,10 +157,7 @@ map_topsoil_riverwater <- function(lau_name,
   
   for (name in seq_along(lau_name)) {
     
-    # Each LAU unit will generate: 
-    # - Individual maps per substance (soil PEC, soil RQ, water PEC, water RQ)
-    # - Cumulative maps (soil RQ, water RQ)
-    
+
     ######################################################################
     ############# START: Import and transform input data sets ############
     ######################################################################
@@ -155,13 +208,7 @@ map_topsoil_riverwater <- function(lau_name,
     # basins_nrmax <- readline(prompt = paste0("There are ", nrow(basins_cz_distr), " river basins intersecting this district. Select number of river basins: "))
     # 
     # basins_cz_distr_max <- basins_cz_distr[1:basins_nrmax,] |> terra::split("HYBAS_ID")
-    
-    # River network #
-    ## River network CUZK
-    watrcrsL <- dir_ls(path_home_r(), recurse = T, regexp = "WatrcrsL.shp$") |>
-      vect() |>
-      project(lau_cz)
-    
+
     # gemup for the selected district and Active substance #
     # gemup_lau <- list()
     
@@ -169,7 +216,7 @@ map_topsoil_riverwater <- function(lau_name,
     
     cat("\r", "Gemup for", lau_name[name]$LAU_NAME, "is being processed.", lau_name |> length() - name, "LAUs remaining.")
     
-    gemup_lau <- dir_ls(path_home_r(), recurse = T, regexp = "gemap100_model_cz") |>
+    gemup_lau <- dir_ls(path_home_r(), recurse = T, regexp = "gemup100_slim_cz") |>
       vect(extent = ext(lau_name[name])) |> 
       # vect(extent = ext(basins_cz_distr_max[[basin]])) |>
       mask(lau_name[name]) |>
@@ -200,9 +247,8 @@ map_topsoil_riverwater <- function(lau_name,
     acsubst_water <- acsubst_water[which(acsubst_water %in% acsubst_gemup$acsubst)]
     acsubst_soil <- acsubst_soil[which(acsubst_soil %in% acsubst_gemup$acsubst)]
     
-    # Read basin polygons from Hydrosheds for the selected district
-    basins_lau_cz <- dir_ls(path_home_r(), recurse = T, regexp = "hydrosheds_lvl10_basins_cz.gpkg") |>
-      vect() |>
+    # Read basin polygons from Hydrosheds for the selected LAU
+    basins_lau_cz <- basins_cz |> 
       select("HYBAS_ID", "dis_m3_pyr", "dis_m3_pmn", "dis_m3_pmx", "riv_tc_ssu", "riv_tc_usu", starts_with("pre_mm_")) |>
       mask(gemup_lau)
     
@@ -271,8 +317,8 @@ map_topsoil_riverwater <- function(lau_name,
     # slopes_all_perc_cz <- map(slopesCl1_8_30as_cz, ~tan(./3600)*100) |> 
     #   rast() |> median() |> project(crs(orcarb_jrc_cz)) |> rename(terrain_slope_med_perc = sum)
     # terra::writeCDF(slopes_all_perc_cz, filename = paste0(path_home_r(),"/TerrainSlope_30as_cz.nc"))
-    slope_cz_30as <- dir_ls(path_home_r(), recurse = T, regexp = "/TerrainSlope_30as_cz.nc$") |>
-      rast() |> crop(lau_name[name])
+    slope_cz_30as <- terrain_slope |> 
+      crop(lau_name[name])
     
     # ESDAC Organic carbon content in topsoil #
     # Data cropped to include only country of interest and saved. Done only once
@@ -283,11 +329,7 @@ map_topsoil_riverwater <- function(lau_name,
     # oc_jrc_cz <- crop(oc_jrc, basins_cz)
     # writeCDF(oc_jrc_cz, filename = paste0(water_spatial_dir ,"/OC_jrc_CZ.nc"), overwrite = T)
     
-    orcarb_jrc_cz_path <- dir_ls(path_home_r(),
-                                 recurse = T,
-                                 regexp ="OC_jrc_CZ.nc$")
-    
-    orcarb_jrc_cz <- rast(orcarb_jrc_cz_path) |>
+    orcarb_jrc_cz <- organic_carbon |>
       select("OC_jrc_CZ") |>
       crop(lau_name[name])
     
@@ -298,10 +340,7 @@ map_topsoil_riverwater <- function(lau_name,
     # sand_jrc_cz_wgs84 <- sand_jrc_laea |>  project(basins_cz) |> crop(basins_cz)
     # writeCDF(sand_jrc_cz_wgs84, filename = paste0(water_spatial_dir ,"sand_jrc_CZ.nc"), overwrite = T)
     
-    sand_jrc_cz_path <- dir_ls(path_home_r(),
-                               recurse = T,
-                               regexp = "sand_jrc_CZ.nc$")
-    sand_jrc_cz <- rast(sand_jrc_cz_path) |>
+    sand_jrc_cz <- sand |>
       crop(lau_name[name])
     
     # clay_jrc_path <- paste0(water_spatial_dir, "Clay.tif")
@@ -309,10 +348,7 @@ map_topsoil_riverwater <- function(lau_name,
     # clay_jrc_cz_wgs84 <- clay_jrc_laea |>  project(basins_cz) |> crop(basins_cz)
     # writeCDF(clay_jrc_cz_wgs84, filename = paste0(water_spatial_dir ,"clay_jrc_CZ.nc"), overwrite = T)
     
-    clay_jrc_cz_path <- dir_ls(path_home_r(),
-                               recurse = T,
-                               regexp = "clay_jrc_CZ.nc$")
-    clay_jrc_cz <- rast(clay_jrc_cz_path) |>
+    clay_jrc_cz <- clay |>
       crop(lau_name[name])
     
     # budens_jrc_path <- paste0(water_spatial_dir, "Bulk_density.tif")
@@ -320,10 +356,7 @@ map_topsoil_riverwater <- function(lau_name,
     # budens_jrc_cz_wgs84 <- budens_jrc_laea |>  project(basins_cz) |> crop(basins_cz)
     # writeCDF(budens_jrc_cz_wgs84, filename = paste0(water_spatial_dir ,"budens_jrc_CZ.nc"), overwrite = T)
     
-    budens_jrc_cz_path <- dir_ls(path_home_r(),
-                                 recurse = T,
-                                 regexp = "budens_jrc_cz.nc$")
-    budens_jrc_cz <- rast(budens_jrc_cz_path) |>
+    budens_jrc_cz <- bulk_dens |>
       crop(lau_name[name])
     
     # Chemical input data from qsars (vega, epi) and PPDB where available #
@@ -354,7 +387,7 @@ map_topsoil_riverwater <- function(lau_name,
     ############ START: Spatial input data intersected with river basin ##################
     ########################################################################################
     
-    rivers_lau <- terra::intersect(watrcrsL[c("HYDROID", "NAMN1", "SHAPE_Leng", "WD7")], basins_lau_cz)
+    rivers_lau <- terra::intersect(river_net[c("HYDROID", "NAMN1", "SHAPE_Leng", "WD7")], basins_lau_cz)
     # Indicate buffer width around a river segment
     rivers_lau_buff_seg <- rivers_lau |> terra::buffer(rivbuff_width+rivers_lau$WD7)
     # Intersect gemup with selected river segments so the gemup is expanded to include hydrography of the selected river basin(s)
@@ -604,8 +637,7 @@ map_topsoil_riverwater <- function(lau_name,
              acsubst,
              District,
              ZKOD,
-             CTVEREC,
-             EAGRI) |> 
+             CTVEREC) |> 
       mutate(conc_acsubst_total_soil_twa_g.kg = conc_acsubst_total_soil_56twa_ug.kg,
              load_acsubst_mean_g.ndays = srunoff_as_load,
              rq_acsubst_total_soil_twa = rq_acsubst_total_soil_twa/1000) |>
@@ -1099,7 +1131,7 @@ map_topsoil_riverwater <- function(lau_name,
                                    values(),
                                  by = c("HYDROID", "NAMN1", "SHAPE_Leng"))
       
-      river_net <- watrcrsL |> 
+      river_net_lau <- river_net |> 
         mask(lau_name[name])
       
       # Color palettes
@@ -1182,7 +1214,7 @@ map_topsoil_riverwater <- function(lau_name,
         ) |>
         
         # Add river water network
-        addPolylines(data = river_net,
+        addPolylines(data = river_net_lau,
                      color = "blue",
                      weight = 0.5,
                      opacity = 1,
@@ -1313,7 +1345,7 @@ map_topsoil_riverwater <- function(lau_name,
         ) |>
         
         # Add river water network
-        addPolylines(data = river_net,
+        addPolylines(data = river_net_lau,
                      color = "blue",
                      weight = 0.5,
                      opacity = 1,
@@ -1583,7 +1615,7 @@ map_topsoil_riverwater <- function(lau_name,
       ) |>
       
       # Add river water network
-      addPolylines(data = river_net,
+      addPolylines(data = river_net_lau,
                    color = "blue",
                    weight = 0.5,
                    opacity = 1,
@@ -1697,6 +1729,9 @@ map_topsoil_riverwater <- function(lau_name,
   #################################################################
 }
 
+# Main function call #
+# Use it for each new scenario
+# It might take up to several minutes to run this function and to generate all the maps for a single LAU. It depends on how many fields and rivers are in the LAU
 map_topsoil_riverwater(lau_name = lau_name,
                          acsubst_name = acsubst_name,
                          app_month = app_month,
@@ -1708,6 +1743,32 @@ map_topsoil_riverwater(lau_name = lau_name,
 ########### START: Model results evaluation #############
 #########################################################
  
+# CZ sampling site cooridnates. It is needed for model evaluation. It can be also used to select LAUs where sampling took place #
+# site_id_cz <- c("F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10",
+#                 "F11", "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20",
+#                 "F21", "F22", "F23", "F24")
+# 
+# site_id_lat_cz <- c(48.75428, 48.7651997, 49.5882283, 48.9971858, 48.8974494, 
+#                     48.9203217, 49.5573031, 49.7089406, 49.7190786, 50.5149308,
+#                     50.5392117, 50.4087597, 49.0598786, 49.0573903, 50.1286728,
+#                     50.2487525, 50.22116, 49.7082947, 48.9869569, 49.6619561,
+#                     49.7321864, 48.8276081, 48.8326775, 48.7364833)
+# 
+# site_id_lon_cz <- c(16.9401214, 16.9324394, 17.1860597, 16.9157722, 16.0395308,
+#                     15.9784944, 13.9029903, 14.8711725, 14.8851656, 16.196935,
+#                     16.1935875, 14.1494492, 15.4676047, 15.4676261, 16.2425311,
+#                     17.6263658, 15.9933244, 14.7895919, 17.0273617, 12.9795581,
+#                     12.9605036, 16.5171839, 16.4857483, 16.9331583)
+# 
+# site_coord_cz <- cbind(tibble(
+#   site_id = site_id_cz,
+#   long = site_id_lon_cz,
+#   lat = site_id_lat_cz)) |> 
+#   sf::st_as_sf(coords = c("long", "lat"), crs = st_crs(lau_cz)) |> 
+#   vect() |> 
+#   terra::intersect(lau_cz)
+
+
 # Evaluation dataset
 pec_soil <- dir_ls(path_home_r(),
                     recurse = T,
