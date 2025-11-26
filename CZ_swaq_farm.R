@@ -121,8 +121,11 @@ acsubst_name <- c("dimoxystrobin", "difenoconazole", "boscalid", "fluazinam",
 
 # Spatial extent #
 # Use lau_okres_cz or lau_derugba_cz
-# Change numbers in brackets to select area(s) 
-lau_name <- lau_okres_cz[c(73:77) , "LAU_NAME"]
+# Change numbers/names in brackets to select area(s). 1) Use single value to select one LAU,
+# 2) use single values in brackets separated with commas to select multiple LAUs e.g., c(1,3,77),
+# 3) use ranges to select consecutive LAUs e.g., c(1:5, 64:73), 
+# 4) use correctly spelled LAU names instead of integers
+lau_name <- lau_okres_cz[1 , "LAU_NAME"]
 
 # Year of simulation #
 # Remains unchanged
