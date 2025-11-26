@@ -46,15 +46,12 @@ lau_okres_cz <- RCzechia::okresy(resolution = "high") |>
   rename(LAU_NAME = NAZ_LAU1) |>
   vect()
 
-# Lapis map 2021 #
+# lpis map 2021 #
 # Used for selecting parcels based on conventional or ecological farming classes.
 # This light version of the original data, contains only conventional farming (EKO = 0) parcels
-lapis_cz <- dir_ls(path_home_r(), recurse = T, regexp = "lapis_slim.gpkg") |> 
+lpis_cz <- dir_ls(path_home_r(), recurse = T, regexp = "lpis_slim.gpkg") |> 
   vect()
 
-
-lapis <- dir_ls(path_home_r(), recurse = T, regexp = "lapis_slim.gpkg") |> 
-  vect()
 # River basin, Hydrosheds #
 # Polygons and attributes from the Hydrosheds dataset
 basins_cz <- dir_ls(path_home_r(), recurse = T, regexp = "hydrosheds_lvl10_basins_cz.gpkg") |>
@@ -125,7 +122,7 @@ acsubst_name <- c("dimoxystrobin", "difenoconazole", "boscalid", "fluazinam",
 # Spatial extent #
 # Use lau_okres_cz or lau_derugba_cz
 # Change numbers in brackets to select area(s) 
-lau_name <- lau_okres_cz[c(30), "LAU_NAME"]
+lau_name <- lau_okres_cz[c(73:77) , "LAU_NAME"]
 
 # Year of simulation #
 # Remains unchanged
@@ -147,6 +144,7 @@ endday <- 56
 # Buffer area around rivers #
 # Can be changed
 rivbuff_width <- 100
+
 
 # Main function for simulating and visualising ASs concentration in topsoil on individual fields and in river segments #
 # Run it only once to create "function object"
@@ -241,7 +239,7 @@ map_topsoil_riverwater <- function(lau_name,
              aprate_mmax = ARmax,
              apfreq = ApFreq) |>   
       tidyterra::bind_spat_cols(lau_name[name] |> values()) |> 
-      terra::merge(lapis_cz |> values(),
+      terra::merge(lpis_cz |> values(),
                    by = c("ZKOD", "CTVEREC")) |> 
       makeValid()
     
