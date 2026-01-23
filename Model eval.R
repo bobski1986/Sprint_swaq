@@ -1,8 +1,13 @@
+library(tidyverse)
+library(fs)
+library(terra)
+
 #########################################################
 ########### START: Model results evaluation #############
 #########################################################
 
-# CZ sampling site cooridnates. It is needed for model evaluation. It can be also used to select LAUs where sampling took place #
+# Sampling coordinates needed for model evaluation. It can be also used to select LAUs where sampling took place #
+# CZ sampling site cooridnates
 # site_id_cz <- c("F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10",
 #                 "F11", "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20",
 #                 "F21", "F22", "F23", "F24")
@@ -26,6 +31,11 @@
 #   sf::st_as_sf(coords = c("long", "lat"), crs = st_crs(lau_cz)) |> 
 #   vect() |> 
 #   terra::intersect(lau_cz)
+# DK sampling site cooridnates
+# site_id_dk <- c("F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10",
+#                 "F11", "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20")
+# site_id_lat_dk <- c()
+# site_id_lon_dk <- c()
 
 
 # Evaluation dataset

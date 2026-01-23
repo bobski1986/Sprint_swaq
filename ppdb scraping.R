@@ -2,15 +2,15 @@ chemprop_gen <- function(Active) {
   
   # Load the necessary libraries
   pkg <- c("rvest", "tidyverse", "stringr", "readxl")
-
+  
   for (i in pkg) {
     if (!requireNamespace(i, quietly = TRUE)) {
       install.packages(i)
     }
   }
-
+  
   lapply(pkg, library, character.only = T)
-
+  
   
   # Extract the http addresses from the indexed chemicals in the PPDB
   ppdb_url <- "https://sitem.herts.ac.uk/aeru/ppdb/en/atoz.htm"
@@ -23,7 +23,7 @@ chemprop_gen <- function(Active) {
     # It seems that some chems are not indexed although available in the database, and some bacterial-based and other are not included in the PPDB: Spinosad, Abamectin, Pelargonic acid
     full_join(tibble(chem_name = c("Sulphur", "6-benzyladenine"),
                      chem_http = c("https://sitem.herts.ac.uk/aeru/ppdb/en/Reports/605.htm",
-                                     "https://sitem.herts.ac.uk/aeru/ppdb/en/Reports/1324.htm")),
+                                   "https://sitem.herts.ac.uk/aeru/ppdb/en/Reports/1324.htm")),
               by = join_by(chem_name, chem_http))
   
   # Create List of active substances from the priority list. For the moment it is list based on usage data in CZ
@@ -191,7 +191,14 @@ chemprop_gen <- function(Active) {
            "6-benzyladenine",
            "mesosulfuron-methyl",
            "mepiquat",
-           "propamocarb") |>
+           "propamocarb",
+           "boscalid",
+           "cyproconazole",
+           "isoxaben",
+           "methoxyfenozide",
+           "prochloraz",
+           "penflufen",
+           "flutolanil") |>
     str_to_sentence() |> 
     str_replace("-p-", "-P-") |>
     str_replace("-p", "-P") |>

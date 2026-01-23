@@ -33,7 +33,7 @@ lapply(pkg, library, character.only = T)
 # To load the data listed below, they should placed in the Documents on local storage
 
 # LAU data #
-# LAUs 2024. 6258 administrative units, Gisco 2024, https://gisco-services.ec.europa.eu/distribution/v2/.
+# LAUs 2024. Administrative units, Gisco 2024, https://gisco-services.ec.europa.eu/distribution/v2/.
 # These LAUs show territorial areas based on the degree of urbanisation (DEGURBA) classes: 1) urban areas: cities, towns and suburbs, and 2) rural areas
 lau_degurba_cz <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_4326.gpkg") |>
   vect() |> 
@@ -104,17 +104,18 @@ bulk_dens <- dir_ls(path_home_r(),
 # - Cumulative maps (soil RQ, water RQ)
 # - .csv files
 
-# List active substances#
+# List of priority active substances in soil and water#
 acsubst_name <- c("dimoxystrobin", "difenoconazole", "boscalid", "fluazinam", 
                   "prochloraz", "diquat", "azoxystrobin", "pethoxamid", 
                   "benzovindiflupyr", "tebuconazole", "quinmerac", 
-                  "mefentrifluconazole", "cyproconazole", "tefluthrin", 
+                  "mefentrifluconazole", "cyproconazole",  "tefluthrin", 
                   "picloram", "metazachlor", "pendimethalin", 
                   "gamma-cyhalothrin", "deltamethrin", "epoxiconazole", 
                   "glyphosate", "spiroxamine", "terbuthylazine", 
                   "flutriafol", "prothioconazole") |> 
   unique() |> 
   str_to_sentence()
+
 
 # Check if all substances are in the PPDB script
 # ASs[which(!acsubst_name %in% ASs)]
@@ -147,7 +148,6 @@ endday <- 56
 # Buffer area around rivers #
 # Can be changed
 rivbuff_width <- 100
-
 
 # Main function for simulating and visualising ASs concentration in topsoil on individual fields and in river segments #
 # Run it only once to create "function object"
@@ -287,7 +287,7 @@ map_topsoil_riverwater <- function(lau_name,
     
     # Check if column exists in basins_lau_cz
     if (!prec_col_name %in% names(basins_lau_cz)) {
-      stop(sprintf("Precipitation column '%s' not found in basins_lau_cz. Available columns: %s",
+      stop(sprintf("Precipitation column '%s' not found in czech basin atlas. Available columns: %s",
                    prec_col_name,
                    paste(names(basins_lau_cz)[grepl("^pre_mm_s", names(basins_lau_cz))], collapse = ", ")))
     }
@@ -351,7 +351,6 @@ map_topsoil_riverwater <- function(lau_name,
     #   slice(1:endday) |> 
     #   mutate(ndays = n())
     
-    
     ### Extract precipitation data for the specified month
     prec_lau <- basins_lau_cz[prec_col_name]
     
@@ -407,7 +406,7 @@ map_topsoil_riverwater <- function(lau_name,
     
     # clay_jrc_path <- paste0(water_spatial_dir, "Clay.tif")
     # clay_jrc_laea <- rast(clay_jrc_path)
-    # clay_jrc_cz_wgs84 <- clay_jrc_laea |>  project(basins_cz) |> crop(basins_cz)
+    # clay_jrc_cz_wgs84 <- clay_jrc_laea |> project(basins_cz) |> crop(basins_cz)
     # writeCDF(clay_jrc_cz_wgs84, filename = paste0(water_spatial_dir ,"clay_jrc_CZ.nc"), overwrite = T)
     
     clay_jrc_cz <- clay |>
@@ -426,7 +425,7 @@ map_topsoil_riverwater <- function(lau_name,
     # first check if the names of properties are the same in the script and PPDB, 
     # PPDB gets updated every now and then, so must be the scraping script.
     source(dir_ls(path_home_r(), recurse = T, regexp = "ppdb scraping"))
-    chemprop <- chemprop_gen(Active = acsubst_name) |> 
+    chemprop <- chemprop_gen(Active = acsubst_gemup$acsubst) |> 
       select(Active,
              DT50_typical_d,
              Koc_ml.g,
@@ -445,9 +444,9 @@ map_topsoil_riverwater <- function(lau_name,
     ############# END: Import and transform input data sets ############
     ####################################################################
     
-    ########################################################################################
-    ############ START: Spatial input data intersected with river basin ##################
-    ########################################################################################
+    #####################################################################################
+    ############ START: Spatial input data intersected with river basin #################
+    #####################################################################################
     
     rivers_lau <- terra::intersect(river_net[c("HYDROID", "NAMN1", "SHAPE_Leng", "WD7")], basins_lau_cz)
     # Indicate buffer width around a river segment
@@ -590,7 +589,7 @@ map_topsoil_riverwater <- function(lau_name,
                                                      Kfoc_ml.g,
                                                      ~((.x*.y)/100)/(1 + (.x*.y/1000)/100)),
                frac_asubst_soil_water_lag = exp(-endday * log(2) / DT50_typical_d) * frac_asubst_soil_water_ini,
-               frac_asubst_soil_solid_lag = exp(-endday * log(2) / DT50_typical_d) * frac_asubst_soil_solid_ini,) |>
+               frac_asubst_soil_solid_lag = exp(-endday * log(2) / DT50_typical_d) * frac_asubst_soil_solid_ini) |>
         ## Initial concentration in soil
         mutate(conc_acsubst_total_soil_ini_ug.kg = pmap_dbl(list(x = aprate_farm_g.ha,
                                                                  y = bulk_dens_kg.dm3,
@@ -706,7 +705,7 @@ map_topsoil_riverwater <- function(lau_name,
       # Calculate cumulative RQ in soil for individual fields
       # Create a character type column showing a list of ASs and RQs for each field
       soil_RQ_nest <- soil_farm_mapinput |>  
-        filter(acsubst %in% acsubst_soil) |> 
+        # filter(acsubst %in% acsubst_soil) |> 
         values() |> 
         group_by(ZKOD, CTVEREC, Crop) |> 
         distinct(acsubst, .keep_all = T) |>
@@ -982,7 +981,7 @@ map_topsoil_riverwater <- function(lau_name,
                                                paste0(lau_name[name]$LAU_NAME,
                                                       "_",
                                                       acsubst_name[as],
-                                                      "_PEC_Soil.html")), selfcontained = T)
+                                                      "_PEC_Soil_CZ.html")), selfcontained = T)
         
         # Soil RQ maps for individual AS
         # Create the leaflet map
@@ -1078,7 +1077,7 @@ map_topsoil_riverwater <- function(lau_name,
                                                    paste0(lau_name[name]$LAU_NAME,
                                                           "_",
                                                           acsubst_name[as],
-                                                          "_RQ_Soil.html")), selfcontained = T)
+                                                          "_RQ_Soil_CZ.html")), selfcontained = T)
       }
 
       # Cumulative RQ maps
@@ -1201,7 +1200,7 @@ map_topsoil_riverwater <- function(lau_name,
                  file = paste0(path_home_r(),
                                "/Soil/RQ/",
                                lau_name[name]$LAU_NAME,
-                               "_RQcum_Soil.html"),
+                               "_RQcum_Soil_CZ.html"),
                  selfcontained = T)
       
       write_excel_csv(soil_farm_mapinput |>
@@ -1215,7 +1214,7 @@ map_topsoil_riverwater <- function(lau_name,
                       paste0(path_home_r(),
                              "/Soil/PEC/",
                              lau_name[name]$LAU_NAME,
-                             "_PEC_Soil.csv"))
+                             "_PEC_Soil_CZ.csv"))
       
       write_excel_csv(soil_farm_mapinput |>
                         values()  |> 
@@ -1228,7 +1227,7 @@ map_topsoil_riverwater <- function(lau_name,
                       paste0(path_home_r(),
                              "/Soil/RQ/",
                              lau_name[name]$LAU_NAME,
-                             "_RQ_Soil.csv"))
+                             "_RQ_Soil_CZ.csv"))
       
       write_excel_csv(soil_cumRQ |>
                         values() |> 
@@ -1242,12 +1241,15 @@ map_topsoil_riverwater <- function(lau_name,
                              "/Soil/RQ/",
                              lau_name[name]$LAU_NAME,
                              "_",
-                             "RQcum_Soil.csv")) 
+                             "RQcum_Soil_CZ.csv")) 
       
     }
     
     else {
     
+      #######################################################################################
+      ############ END: Spatial input data intersected with river basin ###################
+      #######################################################################################
     # Extract data from raster maps intersected by river segments
     prec_field <- terra::zonal(prec_lau,
                                gemup_lau,
@@ -1305,7 +1307,6 @@ map_topsoil_riverwater <- function(lau_name,
       rename("bulk_dens" = "budens_jrc_CZ")
     
     # Patch size of arable land in a river basins and district
-    
     crop_area_tot_lau <- gemup_lau |>
       values() |>
       group_by(LAU_NAME, Crop, acsubst) |>
@@ -1492,7 +1493,7 @@ map_topsoil_riverwater <- function(lau_name,
     # Calculate cumulative RQ in soil for individual fields
     # Create a character type column showing a list of ASs and RQs for each field
     soil_RQ_nest <- soil_farm_mapinput |>  
-      filter(acsubst %in% acsubst_soil) |> 
+      # filter(acsubst %in% acsubst_soil) |> 
       values() |> 
       group_by(ZKOD, CTVEREC, Crop) |> 
       distinct(acsubst, .keep_all = T) |>
@@ -1852,7 +1853,7 @@ map_topsoil_riverwater <- function(lau_name,
                                              paste0(lau_name[name]$LAU_NAME,
                                                     "_",
                                                     acsubst_name[as],
-                                                    "_PEC_Soil.html")), selfcontained = T)
+                                                    "_PEC_Soil_CZ.html")), selfcontained = T)
       
       # Soil RQ maps for individual AS
       # Create the leaflet map
@@ -1948,7 +1949,7 @@ map_topsoil_riverwater <- function(lau_name,
                                                  paste0(lau_name[name]$LAU_NAME,
                                                         "_",
                                                         acsubst_name[as],
-                                                        "_RQ_Soil.html")), selfcontained = T)
+                                                        "_RQ_Soil_CZ.html")), selfcontained = T)
     }
     
     # Water PEC and RQ individual maps 
@@ -2178,7 +2179,7 @@ map_topsoil_riverwater <- function(lau_name,
                                               paste0(lau_name[name]$LAU_NAME,
                                                      "_",
                                                      acsubst_name[as],
-                                                     "_PEC_Water.html")), selfcontained = T)
+                                                     "_PEC_Water_CZ.html")), selfcontained = T)
       
       # River water RQ maps for individual AS
       # Create the leaflet map
@@ -2299,7 +2300,7 @@ map_topsoil_riverwater <- function(lau_name,
                                                   paste0(lau_name[name]$LAU_NAME,
                                                          "_",
                                                          acsubst_name[as],
-                                                         "_RQ_Water.html")), selfcontained = T)
+                                                         "_RQ_Water_CZ.html")), selfcontained = T)
     }
     
     # Cumulative RQ maps
@@ -2601,7 +2602,7 @@ map_topsoil_riverwater <- function(lau_name,
     saveWidget(river_cum_rq_dist, file = paste0(path_home_r(),
                                                 "/Water/RQ/",
                                                 lau_name[name]$LAU_NAME,
-                                                "_RQcum_Water.html"), selfcontained = T)  
+                                                "_RQcum_Water_CZ.html"), selfcontained = T)  
     
     write_excel_csv(river_seg_mapinput |> 
                       select(HYDROID, 
@@ -2618,7 +2619,7 @@ map_topsoil_riverwater <- function(lau_name,
                     paste0(path_home_r(),
                            "/Water/PEC/",
                            lau_name[name]$LAU_NAME,
-                           "_PEC_Water.csv"))
+                           "_PEC_Water_CZ.csv"))
     
     write_excel_csv(river_seg_mapinput |> 
                       select(HYDROID, 
@@ -2634,7 +2635,7 @@ map_topsoil_riverwater <- function(lau_name,
                     paste0(path_home_r(),
                            "/Water/RQ/",
                            lau_name[name]$LAU_NAME,
-                           "_RQ_Water.csv"))
+                           "_RQ_Water_CZ.csv"))
     
     write_excel_csv(river_cumRQ |>
                       values() |> 
@@ -2646,7 +2647,7 @@ map_topsoil_riverwater <- function(lau_name,
                     paste0(path_home_r(),
                            "/Water/RQ/",
                            lau_name[name]$LAU_NAME,
-                           "_RQcum_Water.csv")) 
+                           "_RQcum_Water_CZ.csv")) 
     }
     
   }

@@ -5,6 +5,7 @@ pkg <- c("tidyverse",
          "OpenStreetMap",
          "tidyterra",
          "sf",
+         "sfarrow",
          "data.table",
          "openxlsx",
          'ncdf4',
@@ -655,7 +656,6 @@ pec_field_to_basin_nl(conc_soil_agg_rast_nl[3], conc_soil_agg_vect_nl[[3]])
 ########### END: Pesticide topsoil map ####################
 ###########################################################
 
-
 #########################################################################
 ########### START: Pesticide concentration in surface water #############
 #########################################################################
@@ -714,9 +714,9 @@ vect()
 # --- Close Progress Bar ---
 # Close the progress bar when the loop is complete
 # close(pb)
-# 
+
 # cat("\nProcessing complete.\n")
-# 
+
 # writeVector(farm_rivers_buff_bas_nl |> svc() |> vect(), "water_network_farmbuff100_12_NL.gpkg")
 # writeVector(rivers_buff_nl |> svc() |> vect(), "rivers_buff100_nl.gpkg")
 
@@ -1056,7 +1056,7 @@ create_pec_water_map <- function(conc_rast, conc_vect, rivers_rast, class_name, 
   color_palette_vect_rev <- colorBin(palette = "BuPu", domain = vector_values,
                                      bins = vector_breaks, reverse = T, na.color = "#ffdeaf")
   
-  pec_water_map <- leaflet(options = leafletOptions()) |> 
+  pec_water_map_nl <- leaflet(options = leafletOptions()) |> 
     addMapPane(name = "rast_riv", zIndex = 410) |> 
     addMapPane(name = "vect_bas", zIndex = 420) |> 
     addMapPane(name = "vect_lau", zIndex = 430) |> 
@@ -1130,6 +1130,7 @@ create_pec_water_map <- function(conc_rast, conc_vect, rivers_rast, class_name, 
         }
         var zoomControl = L.control.zoom({ position: 'bottomleft' });
         zoomControl.addTo(this);
+        
         var titleControl = document.querySelector('.leaflet-top.leaflet-left .leaflet-control');
         if (titleControl) {
           window.addEventListener('resize', function() {
@@ -1141,7 +1142,7 @@ create_pec_water_map <- function(conc_rast, conc_vect, rivers_rast, class_name, 
       }
     ")
   
-  return(pec_water_map)
+  return(pec_water_map_nl)
 }
 
 # Generate maps for all classes and chemicals
@@ -1183,7 +1184,7 @@ for (class_idx in seq_along(names(river_classes))) {
     
     # Create map
     cat(paste0("      • Creating interactive map...\n"))
-    map <- create_pec_water_map(conc_rast, conc_vect[[chem_idx]], 
+    map <- create_pec_water_map_nl(conc_rast, conc_vect[[chem_idx]], 
                                 rivers_rast_classified[[class_name]], 
                                 class_name, chem_name)
     current_step_step2 <- current_step_step2 + 1
