@@ -51,7 +51,7 @@ river_net <- dir_ls(path_home_r(), recurse = T, regexp = "water_network_12_NL.gp
   vect()
 
 ## Selection of dutch river class: "3_6", "0.5_3_L20", "0.5_3_L60", "0.5_3_L150", "0.5_3_Lmax"
-river_class_name <- "0.5_3_L60"
+river_class_name <- "0.5_3_L150"
 
 # Terrain slope, FAO #
 terrain_slope <- dir_ls(path_home_r(),
@@ -428,7 +428,6 @@ map_topsoil_riverwater <- function(lau_name,
       terra::merge(basins_lau_nl[c("HYBAS_ID", "dis_m3_pyr")] |>
                      values(), by = "HYBAS_ID")
     
-    # basins_lau_nl |> values(), by = "HYBAS_ID"
     # Filter rivers present in the LAU based on selected river class
     rivers_class_lau <- filter_rivers(rivers_lau, river_classes[[river_class_name]]) 
     
@@ -438,7 +437,7 @@ map_topsoil_riverwater <- function(lau_name,
     # Intersect gemup with selected river segments so the gemup is expanded to include hydrography of the selected river basin(s)
     gemup_lau_rivers_class_buff <- gemup_lau[rivers_class_lau_buff]
     
-    if(rivers_net_buff_farm_lau |> nrow() == 0) {
+    if(gemup_lau_rivers_class_buff |> nrow() == 0) {
       
       "Warning: There are no fields in the buffer. Only PEC and RQ soil maps will be generated."
       
@@ -607,7 +606,7 @@ map_topsoil_riverwater <- function(lau_name,
                                       ~.x * (.y/100))) |>
         ## Application rate correction
         mutate(aprate_farm_kg.ha = map2_dbl(aprate_farm_g.ha,
-                                            sdrift_load,
+                                            sdrift_as_load,
                                             ~.x-.y)/1000) |> 
         ## AS surface runoff loading
         mutate(srunoff_as_load = pmap_dbl(list(field_area,
@@ -628,7 +627,7 @@ map_topsoil_riverwater <- function(lau_name,
                conc_acsubst_total_soil_twa_ug.kg,
                rq_acsubst_total_soil_twa,
                srunoff_as_load,
-               sdrift_load) |> 
+               sdrift_as_load) |> 
         mutate(Crop = str_replace_all(Crop, "_", " "),
               Crop = str_to_sentence(Crop)) |> 
         # mutate(rq_acsubst_total_soil_twa = rq_acsubst_total_soil_twa) |>
@@ -1139,7 +1138,7 @@ map_topsoil_riverwater <- function(lau_name,
       
       write_excel_csv(soil_farm_mapinput |>
                         values()  |> 
-                        select(-c(srunoff_as_load, LAU_NAME, rq_acsubst_total_soil_twa)) |> 
+                        select(-c(LAU_NAME, rq_acsubst_total_soil_twa)) |> 
                         cbind(endday |>
                                 as.data.frame()) |> 
                         cbind(lau_name[1] |> 
@@ -1152,7 +1151,7 @@ map_topsoil_riverwater <- function(lau_name,
       
       write_excel_csv(soil_farm_mapinput |>
                         values()  |> 
-                        select(-c(srunoff_as_load, LAU_NAME, conc_acsubst_total_soil_twa_ug.kg)) |> 
+                        select(-c(sdrift_as_load, srunoff_as_load, LAU_NAME, conc_acsubst_total_soil_twa_ug.kg)) |> 
                         cbind(endday |>
                                 as.data.frame()) |> 
                         cbind(lau_name[1] |> 
@@ -1165,7 +1164,6 @@ map_topsoil_riverwater <- function(lau_name,
       
       write_excel_csv(soil_cumRQ |>
                         values() |> 
-                        select(-LAU_NAME) |> 
                         cbind(endday |>
                                 as.data.frame()) |> 
                         cbind(lau_name[1] |> 
@@ -1448,7 +1446,9 @@ map_topsoil_riverwater <- function(lau_name,
                                      values(),
                                    by = c("id", "length_m")) |> 
         mutate(river_w = case_when(river_class_name == "3_6" ~ (length_m*4)/(buffer_area.m*(farm_buff_area.m/buffer_area.m)),
-               river_class_name == "0.5_3" ~ (length_m*1.5)/(buffer_area.m*(farm_buff_area.m/buffer_area.m))))
+                                   river_class_name |> str_extract("0.5_3") == "0.5_3" ~ (length_m*1.5)/(buffer_area.m*(farm_buff_area.m/buffer_area.m))))
+      
+      
       
       # Calculate cumulative RQ for fields in river buffer for individual river segments
       # Create a character type column showing a list of ASs and RQs for each river segment
@@ -1877,8 +1877,14 @@ map_topsoil_riverwater <- function(lau_name,
                                      by = c("id",
                                             "length_m"))
           
-          rivers_class_lau_buff_corr <- rivers_class_lau |> filter(id %in% river_data$id) |> buffer(20)
-          river_data_corr <- terra::intersect(rivers_class_lau_buff_corr[""], river_data)
+          # Resize buffer size for better PEC and RQ surface water maps readability. PEC and RQ values remain unchanged.
+          rivers_class_lau_buff_corr_pec <- rivers_class_lau |> filter(id %in% river_data$id) |> buffer(20)
+          river_data_corr <- terra::intersect(rivers_class_lau_buff_corr_pec[""], river_data)
+          
+          rivers_class_lau_buff_corr_rq <- rivers_class_lau |> filter(id %in% river_cumRQ_all$id) |> buffer(20)
+          river_cumRQ_all_corr <- terra::intersect(rivers_class_lau_buff_corr_rq[""], river_cumRQ_all)
+          
+          # Define name of currently used river class for dynamic naming of control widgets
           river_length_class <- paste0(river_classes[[river_class_name]]$length_min, " - ", river_classes[[river_class_name]]$length_max)
           
           # Color palettes
@@ -1966,7 +1972,17 @@ map_topsoil_riverwater <- function(lau_name,
                          color = "blue",
                          weight = 0.5,
                          opacity = 1,
-                         group = "River network" 
+                         group = paste0("River network<br>",
+                                        "Breadth class: ",
+                                        river_classes[[river_class_name]]$width,
+                                        "<br>",
+                                        "Length class: ",
+                                        ifelse(is.null(river_classes[[river_class_name]]$length_min) == T && is.null(river_classes[[river_class_name]]$length_max) == T,
+                                               "ALL",
+                                               ifelse(is.null(river_classes[[river_class_name]]$length_min) == T && !is.null(river_classes[[river_class_name]]$length_max) == T,
+                                                      paste0("0 - ", river_classes[[river_class_name]]$length_max),
+                                                      river_length_class)),
+                                        " meter") 
             ) |> 
             
             # Add river water concentration polygons
@@ -2006,7 +2022,20 @@ map_topsoil_riverwater <- function(lau_name,
             
             # Add layer controls
             addLayersControl(
-              overlayGroups = c("Administrative  borders", "Individual river segments", "River network", "River basins"),
+              overlayGroups = c("Administrative  borders",
+                                "Individual river segments",
+                                paste0("River network<br>",
+                                       "Breadth class: ",
+                                       river_classes[[river_class_name]]$width,
+                                       "<br>",
+                                       "Length class: ",
+                                       ifelse(is.null(river_classes[[river_class_name]]$length_min) == T && is.null(river_classes[[river_class_name]]$length_max) == T,
+                                              "ALL",
+                                              ifelse(is.null(river_classes[[river_class_name]]$length_min) == T && !is.null(river_classes[[river_class_name]]$length_max) == T,
+                                                     paste0("0 - ", river_classes[[river_class_name]]$length_max),
+                                                     river_length_class)),
+                                       " meter"),
+                                "River basins"),
               options = layersControlOptions(collapsed = FALSE)
             ) |>
             
@@ -2072,6 +2101,8 @@ map_topsoil_riverwater <- function(lau_name,
                                                   paste0(lau_name[1]$LAU_NAME,
                                                          "_",
                                                          acsubst_name[1],
+                                                         "_",
+                                                         river_class_name,
                                                          "_PEC_Water_NL.html")), selfcontained = T)
           
           # River water RQ maps for individual AS
@@ -2216,10 +2247,392 @@ map_topsoil_riverwater <- function(lau_name,
                                                       paste0(lau_name[1]$LAU_NAME,
                                                              "_",
                                                              acsubst_name[1],
+                                                             "_",
+                                                             river_class_name,
                                                              "_RQ_Water_NL.html")), selfcontained = T)
         }
+        
+        # Cumulative RQ maps
+        # Define color palette function
+        # Using reversed Purple-Green scheme, skipping middle (white) color
+        # For the categories of risk, it is important to have a cut at 0.2 (defined as safe level - exposure must be 5 times lower than NOEC). So, the first three categories would be <0.2, ≥ 0.2, ≥ 1... then, it could be ≥ 2, ≥ 3, ≥ 4...
+        soil_RQcum_colors <- brewer.pal(11, "PRGn")[c(1,2,3,4,5,8,9,10)]
+        river_RQcum_colors <- brewer.pal(11, "PRGn")[c(1,2,3,4,5,8,9,10)]
+        
+        soil_RQcum_pal <- colorBin(
+          palette = rev(soil_RQcum_colors),
+          domain = soil_cumRQ_all$sum_rq_acsubst_total_soil_twa,
+          bins = c(0, 0.2, 1, 2, 3, 5, 10000),
+          na.color = "#ffdeaf"
+        )
+        
+        river_RQcum_pal <- colorBin(
+          palette = river_RQcum_colors |> rev(),
+          domain = river_cumRQ_all$sum_rq_mean_river_seg_twa,
+          bins = c(0, 0.2, 1, 2, 3, 5, 10000),
+          na.color = "#ffdeaf"
+        )
+        
+        # Cumulative RQ maps titles
+        ## Cumulative RQ soil map title
+        soil_rqcum_title <- paste0(
+          "Cumulative RQ<sub>earthworm</sub> soil after ",
+          endday |> unique(),
+          "-day exposure following 1x application in ",
+          app_month,
+          " ",
+          "(",
+          sim_yr,
+          ")",
+          " in ",
+          lau_name[1]$LAU_NAME
+        )
+        
+        # Cumulative RQ water map title
+        river_rqcum_title <- paste0(
+          "Cumulative RQ<sub>fish, area weighted</sub> surface water after ",
+          endday |> unique(),
+          "-day exposure following 1x application in ",
+          app_month,
+          " ",
+          "(",
+          sim_yr,
+          ")",
+          " in ",
+          lau_name[1]$LAU_NAME
+        )
+        
+        if (!pb$finished) pb$tick(tokens = list(map_type = "Creating cumulative Soil RQ map"))
+        
+        # Cumulative RQ soil map
+        soil_cum_rq_dist <- leaflet() |>
+          # Add OpenStreetMap tiles with transparency
+          addTiles(options = tileOptions(opacity = 0.5)) |>
+          
+          # Add district borders
+          addPolylines(
+            data = lau_name[1],
+            color = "black",
+            weight = 0.5,
+            opacity = 1,
+            fillOpacity = 0,
+            group = "Administrative borders"
+          ) |>
+          
+          # Add soil RQ polygons
+          addPolygons(
+            data = soil_cumRQ_all,
+            fillColor = ~soil_RQcum_pal(sum_rq_acsubst_total_soil_twa),
+            fillOpacity = 0.85,
+            color = "black",
+            weight = 0.25,
+            opacity = 1,
+            popup = ~paste0("<b>Field ID: </b>", objectid, "</b>", "<br>",
+                            "<b>Crop: </b>", "<b>", Crop, "</b>", "<br>",
+                            "<b>Cumulative RQ soil: </b>", "<b>",
+                            ifelse(is.na(sum_rq_acsubst_total_soil_twa), 
+                                   "Missing values",
+                                   format_power10(sum_rq_acsubst_total_soil_twa, digits = 3)), "</b><br>",
+                            "<b>Number of pesticides used: </b>","<b>", nr_as, "</b>", "<br>",
+                            "<b>Top contributors (RQ \u2265 0.01):</b>" ,"<br>", AS_rq),
+            highlightOptions = highlightOptions(color = "black",
+                                                weight = 3,
+                                                bringToFront = TRUE),
+            group = "Individual fields"
+          ) |>
+          
+          # Add layer controls
+          addLayersControl(
+            overlayGroups = c("Administrative borders", "Individual fields"),
+            options = layersControlOptions(collapsed = FALSE)
+          ) |>
+          
+          # Add scale bar
+          addScaleBar(position = "bottomleft") |>
+          
+          # Add custom legend
+          addLegend(
+            colors = soil_RQcum_colors,
+            labels = c("\u2265 5", "\u2265 4", "\u2265 3", "\u2265 2", "\u2265 1", "\u003c 1", "\u2265 0.2", "\u003c 0.2"),
+            title = "Cumulative RQ soil",
+            position = "bottomright",
+            group = "Individual fields",
+            opacity = 1
+          ) |> 
+          addControl(html = paste0("<div style='padding: 8px 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); ",
+                                   "font-size: 14px; font-weight: bold; max-width: calc(100vw - 350px); ",
+                                   "width: fit-content; line-height: 1.5; word-wrap: break-word; z-index: 1000;'>",
+                                   soil_rqcum_title, 
+                                   "</div>"),
+                     position = "topleft") |> 
+          addControl(html = "", position = "bottomleft") %>%
+          htmlwidgets::onRender("
+    function(el, x) {
+      if (this._controlCorners) {
+        var existingZoom = this._controlCorners.topleft.querySelector('.leaflet-control-zoom');
+        if (existingZoom) {
+          existingZoom.remove();
+        }
+      }
+      
+      var zoomControl = L.control.zoom({
+        position: 'bottomleft'
+      });
+      zoomControl.addTo(this);
+      
+       var titleControl = document.querySelector('.leaflet-top.leaflet-left .leaflet-control');
+        if (titleControl) {
+          window.addEventListener('resize', function() {
+            var mapWidth = el.offsetWidth;
+            var maxWidth = Math.max(200, mapWidth - 350);
+            titleControl.style.maxWidth = maxWidth + 'px';
+          });
+        }
+    }
+  ")
+        
+        saveWidget(soil_cum_rq_dist,
+                   file = paste0(path_home_r(),
+                                 "/Soil/RQ/",
+                                 lau_name[1]$LAU_NAME,
+                                 "_RQcum_Soil_NL.html"),
+                   selfcontained = T)
+        
+        write_excel_csv(soil_farm_mapinput |>
+                          values()  |> 
+                          select(-c(LAU_NAME, rq_acsubst_total_soil_twa)) |> 
+                          cbind(endday |>
+                                  as.data.frame()) |> 
+                          cbind(lau_name[1] |> 
+                                  as.data.frame()) |> 
+                          rename(simtime_day = endday),
+                        paste0(path_home_r(),
+                               "/Soil/PEC/",
+                               lau_name[1]$LAU_NAME,
+                               "_PEC_Soil_NL.csv"))
+        
+        write_excel_csv(soil_farm_mapinput |>
+                          values()  |> 
+                          select(-c(LAU_NAME, conc_acsubst_total_soil_twa_ug.kg)) |> 
+                          cbind(endday |>
+                                  as.data.frame()) |> 
+                          cbind(lau_name[1] |> 
+                                  as.data.frame()) |> 
+                          rename(simtime_day = endday),
+                        paste0(path_home_r(),
+                               "/Soil/RQ/",
+                               lau_name[1]$LAU_NAME,
+                               "_RQ_Soil_NL.csv"))
+        
+        write_excel_csv(soil_cumRQ |>
+                          values() |> 
+                          cbind(endday |>
+                                  as.data.frame()) |> 
+                          cbind(lau_name[1] |> 
+                                  as.data.frame()) |> 
+                          rename(simtime_day = endday),
+                        paste0(path_home_r(),
+                               "/Soil/RQ/",
+                               lau_name[1]$LAU_NAME,
+                               "_",
+                               "RQcum_Soil_NL.csv")) 
+        
+        if (!pb$finished) pb$tick(tokens = list(map_type = "Creating cumulative Water RQ map"))
+        # Cumulative RQ river water
+        river_cum_rq_dist <- leaflet() |>
+          # Add OpenStreetMap tiles with transparency
+          addTiles(options = tileOptions(opacity = 0.5)) |>
+          
+          # Add district borders
+          addPolylines(
+            data = lau_name[1],
+            color = "black",
+            weight = 0.75,
+            opacity = 1,
+            fillOpacity = 0,
+            group = "Administrative borders"
+          ) |>
+          
+          # Add river water network
+          addPolylines(data = rivers_class_lau,
+                       color = "blue",
+                       weight = 0.5,
+                       opacity = 1,
+                       group = paste0("River network<br>",
+                                      "Breadth class: ",
+                                      river_classes[[river_class_name]]$width,
+                                      "<br>",
+                                      "Length class: ",
+                                      ifelse(is.null(river_classes[[river_class_name]]$length_min) == T && is.null(river_classes[[river_class_name]]$length_max) == T,
+                                             "ALL",
+                                             ifelse(is.null(river_classes[[river_class_name]]$length_min) == T && !is.null(river_classes[[river_class_name]]$length_max) == T,
+                                                    paste0("0 - ", river_classes[[river_class_name]]$length_max),
+                                                    river_length_class)),
+                                      " meter") 
+          ) |> 
+          
+          # Add river water RQ polygons
+          addPolygons(
+            data = river_cumRQ_all_corr,
+            fillColor = ~river_RQcum_pal(sum_rq_mean_river_seg_twa),
+            fillOpacity = 0.85,
+            color = "black",
+            weight = 0.25,
+            opacity = 1,
+            popup = ~paste0("<b>River name: </b>", "<b>", id, "</b><br>",
+                            "<b># of fields in </b>", "<b>", rivbuff_width, " meter</b>", "<b>", " buffer: ", "</b>",  "<b>", nr_fields, "</b><br>",
+                            "<b>Cumulative RQ surface water: </b>", "<b>",
+                            ifelse(is.na(sum_rq_mean_river_seg_twa), 
+                                   "Missing values",
+                                   format_power10(sum_rq_mean_river_seg_twa, digits = 3)), "</b><br>",
+                            "<b>Top contributors (RQ \u2265 0.001): </b>" ,"<br>", AS_rq),
+            highlightOptions = highlightOptions(color = "black",
+                                                weight = 3,
+                                                bringToFront = TRUE),
+            group = "Individual river segments"
+          ) |>
+          
+          # Add river basins polgons
+          addPolygons(data = basins_lau_nl,
+                      color = "black",
+                      weight = 0.5,
+                      opacity = 0.25,
+                      fillColor = "#1f78b4",
+                      popup = ~paste0("<b>Catchment ID: ",HYBAS_ID |> as.character(),"</b><br>",
+                                      "<b>Annual discharge m\u00B3: ", format_power10(dis_m3_pyr, 3),"</b><br>"),
+                      highlightOptions = highlightOptions(color = "black",
+                                                          weight = 3,
+                                                          bringToFront = TRUE),
+                      group = "River basins" 
+          )  |> 
+          
+          # Add layer controls
+          addLayersControl(
+            overlayGroups = c("Administrative borders",
+                              "Individual river segments",
+                              paste0("River network<br>",
+                                     "Breadth class: ",
+                                     river_classes[[river_class_name]]$width,
+                                     "<br>",
+                                     "Length class: ",
+                                     ifelse(is.null(river_classes[[river_class_name]]$length_min) == T && is.null(river_classes[[river_class_name]]$length_max) == T,
+                                            "ALL",
+                                            ifelse(is.null(river_classes[[river_class_name]]$length_min) == T && !is.null(river_classes[[river_class_name]]$length_max) == T,
+                                                   paste0("0 - ", river_classes[[river_class_name]]$length_max),
+                                                   river_length_class)),
+                                     " meter"),
+                              "River basins"),
+            options = layersControlOptions(collapsed = FALSE)
+          ) |>
+          
+          hideGroup("River basins") |> 
+          
+          # Add scale bar
+          addScaleBar(position = "bottomleft") |> 
+          
+          # Add custom legend
+          addLegend(
+            colors = river_RQcum_colors,
+            labels = c("\u2265 5", "\u2265 4", "\u2265 3", "\u2265 2", "\u2265 1", "\u003c 1", "\u2265 0.2", "\u003c 0.2"),
+            title = "Cumulative RQ surface water<br>(area-weighted)",
+            position = "bottomright",
+            group = "Individual river segments",
+            opacity = 1
+          ) |> 
+          addControl(html = paste0("<div style='padding: 8px 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); ",
+                                   "font-size: 14px; font-weight: bold; max-width: calc(100vw - 350px); ",
+                                   "width: fit-content; line-height: 1.5; word-wrap: break-word; z-index: 1000;'>",
+                                   river_rqcum_title, 
+                                   "</div>"),
+                     position = "topleft") |> 
+          addControl(html = "", position = "bottomleft") %>%
+          htmlwidgets::onRender("
+    function(el, x) {
+      if (this._controlCorners) {
+        var existingZoom = this._controlCorners.topleft.querySelector('.leaflet-control-zoom');
+        if (existingZoom) {
+          existingZoom.remove();
+        }
+      }
+      
+      var zoomControl = L.control.zoom({
+        position: 'bottomleft'
+      });
+      zoomControl.addTo(this);
+      
+       var titleControl = document.querySelector('.leaflet-top.leaflet-left .leaflet-control');
+        if (titleControl) {
+          window.addEventListener('resize', function() {
+            var mapWidth = el.offsetWidth;
+            var maxWidth = Math.max(200, mapWidth - 350);
+            titleControl.style.maxWidth = maxWidth + 'px';
+          });
+        }
+    }
+  ")
+        
+        saveWidget(river_cum_rq_dist, file = paste0(path_home_r(),
+                                                    "/Water/RQ/",
+                                                    lau_name[1]$LAU_NAME,
+                                                    "_",
+                                                    river_class_name,
+                                                    "_RQcum_Water_NL.html"), selfcontained = T)  
+        
+        write_excel_csv(river_seg_mapinput |> 
+                          select(id,
+                                 acsubst,
+                                 srunoff_as_load,
+                                 sdrift_as_load,
+                                 conc_mean_river_seg) |> 
+                          values() |> 
+                          cbind(endday |>
+                                  as.data.frame()) |> 
+                          cbind(lau_name[1] |>
+                                  as.data.frame()) |> 
+                          rename(conc_river_ug.dm3 = conc_mean_river_seg,
+                                 simtime_day = endday),
+                        paste0(path_home_r(),
+                               "/Water/PEC/",
+                               lau_name[1]$LAU_NAME,
+                               "_",
+                               river_class_name,
+                               "_PEC_Water_NL.csv"))
+        
+        write_excel_csv(river_seg_mapinput |> 
+                          select(id,
+                                 acsubst,
+                                 rq_mean_river_seg_twa) |> 
+                          values() |> 
+                          cbind(endday |>
+                                  as.data.frame()) |> 
+                          cbind(lau_name[1] |>
+                                  as.data.frame()) |> 
+                          rename(simtime_day = endday),
+                        paste0(path_home_r(),
+                               "/Water/RQ/",
+                               lau_name[1]$LAU_NAME,
+                               "_",
+                               river_class_name,
+                               "_RQ_Water_NL.csv"))
+        
+        write_excel_csv(river_cumRQ |>
+                          values() |> 
+                          cbind(endday |>
+                                  as.data.frame()) |> 
+                          cbind(lau_name[1] |> 
+                                  as.data.frame()) |> 
+                          rename(simtime_day = endday),
+                        paste0(path_home_r(),
+                               "/Water/RQ/",
+                               lau_name[1]$LAU_NAME,
+                               "_",
+                               river_class_name,
+                               "_RQcum_Water_NL.csv")) 
       
 
     }
   }
+  #################################################################
+  ########## END: Pesticide concentration and risk maps ###########
+  #################################################################
 }

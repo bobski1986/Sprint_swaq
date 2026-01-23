@@ -1205,7 +1205,7 @@ map_topsoil_riverwater <- function(lau_name,
       
       write_excel_csv(soil_farm_mapinput |>
                         values()  |> 
-                        select(-c(srunoff_as_load, District, rq_acsubst_total_soil_twa)) |> 
+                        select(-c(District, rq_acsubst_total_soil_twa)) |> 
                         cbind(endday |>
                                 as.data.frame()) |> 
                         cbind(lau_name[name] |> 
@@ -2445,12 +2445,12 @@ map_topsoil_riverwater <- function(lau_name,
                file = paste0(path_home_r(),
                              "/Soil/RQ/",
                              lau_name[name]$LAU_NAME,
-                             "_RQcum_Soil.html"),
+                             "_RQcum_Soil_CZ.html"),
                selfcontained = T)
     
     write_excel_csv(soil_farm_mapinput |>
                       values()  |> 
-                      select(-c(srunoff_as_load, District, rq_acsubst_total_soil_twa)) |> 
+                      select(-c(District, rq_acsubst_total_soil_twa)) |> 
                       cbind(endday |>
                               as.data.frame()) |> 
                       cbind(lau_name[name] |> 
@@ -2459,7 +2459,7 @@ map_topsoil_riverwater <- function(lau_name,
                     paste0(path_home_r(),
                       "/Soil/PEC/",
                     lau_name[name]$LAU_NAME,
-                    "_PEC_Soil.csv"))
+                    "_PEC_Soil_CZ.csv"))
     
     write_excel_csv(soil_farm_mapinput |>
                       values()  |> 
@@ -2472,7 +2472,7 @@ map_topsoil_riverwater <- function(lau_name,
                     paste0(path_home_r(),
                            "/Soil/RQ/",
                            lau_name[name]$LAU_NAME,
-                           "_RQ_Soil.csv"))
+                           "_RQ_Soil_CZ.csv"))
     
     write_excel_csv(soil_cumRQ |>
                       values() |> 
@@ -2486,7 +2486,7 @@ map_topsoil_riverwater <- function(lau_name,
                            "/Soil/RQ/",
                            lau_name[name]$LAU_NAME,
                            "_",
-                           "RQcum_Soil.csv")) 
+                           "RQcum_Soil_CZ.csv")) 
     
     if (!pb$finished) pb$tick(tokens = list(map_type = "Creating cumulative Water RQ map"))
     # Cumulative RQ river water
