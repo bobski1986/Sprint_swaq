@@ -152,7 +152,7 @@ rivbuff_width <- 100
 # Main function for simulating and visualising ASs concentration in topsoil on individual fields and in river segments #
 # Run it only once to create "function object"
 # Don't change content in the curly brackets 
-map_topsoil_riverwater <- function(lau_name,
+map_topsoil_riverwater_cz <- function(lau_name,
                                    acsubst_name,
                                    app_month,
                                    endday,
@@ -2659,7 +2659,7 @@ map_topsoil_riverwater <- function(lau_name,
 # Main function call #
 # Use it for each new scenario given by a new set of parameters 
 # It might take up to several minutes to process all input files, run the model and to generate all files for a single LAU.
-map_topsoil_riverwater(lau_name = lau_name,
+map_topsoil_riverwater_cz(lau_name = lau_name,
                          acsubst_name = acsubst_name,
                          app_month = app_month,
                          endday = endday,
