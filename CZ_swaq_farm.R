@@ -61,7 +61,7 @@ basins_cz <- dir_ls(path_home_r(), recurse = T, regexp = "hydrosheds_lvl10_basin
 # River network 
 river_net <- dir_ls(path_home_r(), recurse = T, regexp = "WatrcrsL.shp$") |>
   vect() |>
-  project(lau_okres_cz)
+  project(lau_degurba_cz)
 
 # Terrain slope, FAO #
 terrain_slope <- dir_ls(path_home_r(), recurse = T, regexp = "/TerrainSlope_30as_cz.nc$") |>
@@ -126,7 +126,7 @@ acsubst_name <- c("dimoxystrobin", "difenoconazole", "boscalid", "fluazinam",
 # 2) use single values in brackets separated with commas to select multiple LAUs e.g., c(1,3,77),
 # 3) use ranges to select consecutive LAUs e.g., c(1:5, 64:73), 
 # 4) use correctly spelled LAU names instead of integers
-lau_name <- lau_okres_cz[1 , "LAU_NAME"]
+lau_name <- lau_degurba_cz[1 , "LAU_NAME"]
 
 # Year of simulation #
 # Remains unchanged

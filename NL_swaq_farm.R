@@ -3,6 +3,7 @@
 #############################
 pkg <- c("tidyverse",
          "fs",
+         "rJava",
          "readxl",
          "terra",
          "tmap",
@@ -234,8 +235,8 @@ map_topsoil_riverwater_nl <- function(lau_name,
     cat("\r", "Gemup for", lau_name[name]$LAU_NAME, "is being processed.", lau_name |> length() - name, "LAUs remaining.")
     
     gemup_lau <- dir_ls(path_home_r(), recurse = T, regexp = "gemap_slim_nl") |> 
-      vect(extent = ext(lau_name[1])) |> 
-      mask(lau_name[1]) |>
+      vect(extent = ext(lau_name[name])) |> 
+      mask(lau_name[name]) |>
       filter(EU_name %in% acsubst_name) |> 
       rename(infactor_av = inter_frac_bbch.ave,
              infactor_min = inter_frac_bbch.min,
@@ -254,7 +255,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
     # Read basin polygons from Hydrosheds for the selected LAU
     basins_lau_nl <- basins_nl |> 
       select("HYBAS_ID", "dis_m3_pyr", "dis_m3_pmn", "dis_m3_pmx", "riv_tc_ssu", "riv_tc_usu", starts_with("pre_mm_")) |>
-      mask(lau_name[1]) |> 
+      mask(lau_name[name]) |> 
       simplifyGeom(0.005)
     
     # Precipitation data from HYDROSHEDS database #
@@ -298,7 +299,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
     
     # Terrain slope #
     slope_nl_30as <- terrain_slope |> 
-      crop(lau_name[1])
+      crop(lau_name[name])
     
     # HYDROSHEDS (to be changed to ESDAC octop) Organic carbon content in topsoil #
     organic_carbon <- (organic_carbon  / (bulk_dens * 10000 * 0.05)) * 100
@@ -306,17 +307,17 @@ map_topsoil_riverwater_nl <- function(lau_name,
     
     orcarb_nl <- organic_carbon |>
       select("oc_perc") |>
-      crop(lau_name[1])
+      crop(lau_name[name])
     
     # ESDAC topsoil physical properties for Europe (based on LUCAS topsoil data) #
     sand_jrc_nl <- sand |>
-      mask(lau_name[1], touches = T)
+      mask(lau_name[name], touches = T)
 
     clay_jrc_nl <- clay |>
-      mask(lau_name[1], touches = T)
+      mask(lau_name[name], touches = T)
     
     budens_jrc_nl <- bulk_dens |>
-      crop(lau_name[1], touches = T)
+      crop(lau_name[name], touches = T)
     
     # Crop specific spray drift values to the "gemup"
     spray_drift <- tibble(
@@ -424,7 +425,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
     
     # Intersect filtered rivers with selected LAU
     
-    rivers_lau <- terra::intersect(river_net, lau_name[1]) |> 
+    rivers_lau <- terra::intersect(river_net, lau_name[name]) |> 
       terra::merge(basins_lau_nl[c("HYBAS_ID", "dis_m3_pyr")] |>
                      values(), by = "HYBAS_ID")
     
@@ -631,7 +632,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         mutate(Crop = str_replace_all(Crop, "_", " "),
               Crop = str_to_sentence(Crop)) |> 
         # mutate(rq_acsubst_total_soil_twa = rq_acsubst_total_soil_twa) |>
-        mask(lau_name[1])
+        mask(lau_name[name])
       
       # Calculate cumulative RQ in soil for individual fields
       # Create a character type column showing a list of ASs and RQs for each field
@@ -671,7 +672,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                AS_rq = str_replace_all(AS_rq, "0.01$", "<0.01"),
                Crop = str_replace_all(Crop, "_", " "),
                Crop = str_to_sentence(Crop)) |>
-        mask(lau_name[1])
+        mask(lau_name[name])
       
       ####################################################################
       ########### END: Pesticide Runoff Model Schriever 2007 #############
@@ -739,18 +740,18 @@ map_topsoil_riverwater_nl <- function(lau_name,
         width = 100
       )
       
-      actual_soil_acsubst_name <- soil_farm_mapinput$acsubst[1] |> unique()
+      actual_soil_acsubst_name <- soil_farm_mapinput$acsubst |> unique()
       
       # Soil PEC and RQ individual maps 
       for (as in seq_along(acsubst_name <- actual_soil_acsubst_name)) {
         
         # Store current substance name for progress updates
-        current_substance <- acsubst_name[1]
+        current_substance <- acsubst_name[as]
         
         # Prepare data
         # Prepare soil data
         soil_data <- soil_farm_mapinput |> 
-          filter(acsubst %in% acsubst_name[1])
+          filter(acsubst %in% acsubst_name[as])
         
         # Concentration maps palettes
         # Soil concentration palette
@@ -785,7 +786,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         # Concentration maps titles
         # Soil concentration map title
         soil_conc_title <- paste0(
-          acsubst_name[1], " ",
+          acsubst_name[as], " ",
           endday |> unique(),
           "-day PEC soil after 1x application in ",
           app_month,
@@ -794,13 +795,13 @@ map_topsoil_riverwater_nl <- function(lau_name,
           sim_yr,
           ")",
           " in ",
-          lau_name[1]$LAU_NAME
+          lau_name[name]$LAU_NAME
         )
         
         # RQ maps titles
         # Soil RQ map title
         soil_rq_title <- paste0(
-          acsubst_name[1], " ",
+          acsubst_name[as], " ",
           endday |> unique(),
           "-day RQ<sub>earthworm</sub> soil after 1x application in ",
           app_month,
@@ -809,7 +810,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           sim_yr,
           ")",
           " in ",
-          lau_name[1]$LAU_NAME
+          lau_name[name]$LAU_NAME
         )
         
         # AS concentration in topsoil
@@ -820,7 +821,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           
           # Add district borders
           addPolylines(
-            data = lau_name[1],
+            data = lau_name[name],
             color = "black",
             weight = 0.75,
             opacity = 1,
@@ -911,9 +912,9 @@ map_topsoil_riverwater_nl <- function(lau_name,
         saveWidget(soil_as_conc, file = paste0(dir_create(path_home_r(),
                                                           "/Soil/PEC"),
                                                "/", 
-                                               paste0(lau_name[1]$LAU_NAME,
+                                               paste0(lau_name[name]$LAU_NAME,
                                                       "_",
-                                                      acsubst_name[1],
+                                                      acsubst_name[as],
                                                       "_PEC_Soil_NL.html")), selfcontained = T)
         
         # Soil RQ maps for individual AS
@@ -926,7 +927,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           
           # Add district borders
           addPolylines(
-            data = lau_name[1],
+            data = lau_name[name],
             color = "black",
             weight = 0.75,
             opacity = 1,
@@ -1007,9 +1008,9 @@ map_topsoil_riverwater_nl <- function(lau_name,
         saveWidget(soil_ind_rq_dist, file = paste0(dir_create(path_home_r(),
                                                               "/Soil/RQ"),
                                                    "/", 
-                                                   paste0(lau_name[1]$LAU_NAME,
+                                                   paste0(lau_name[name]$LAU_NAME,
                                                           "_",
-                                                          acsubst_name[1],
+                                                          acsubst_name[as],
                                                           "_RQ_Soil_NL.html")), selfcontained = T)
       }
       
@@ -1038,7 +1039,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         sim_yr,
         ")",
         " in ",
-        lau_name[1]$LAU_NAME
+        lau_name[name]$LAU_NAME
       )
       
       if (!pb$finished) pb$tick(tokens = list(map_type = "Creating cumulative Soil RQ map"))
@@ -1049,7 +1050,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         
         # Add district borders
         addPolylines(
-          data = lau_name[1],
+          data = lau_name[name],
           color = "black",
           weight = 0.5,
           opacity = 1,
@@ -1132,7 +1133,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
       saveWidget(soil_cum_rq_dist,
                  file = paste0(path_home_r(),
                                "/Soil/RQ/",
-                               lau_name[1]$LAU_NAME,
+                               lau_name[name]$LAU_NAME,
                                "_RQcum_Soil_NL.html"),
                  selfcontained = T)
       
@@ -1141,12 +1142,12 @@ map_topsoil_riverwater_nl <- function(lau_name,
                         select(-c(LAU_NAME, rq_acsubst_total_soil_twa)) |> 
                         cbind(endday |>
                                 as.data.frame()) |> 
-                        cbind(lau_name[1] |> 
+                        cbind(lau_name[name] |> 
                                 as.data.frame()) |> 
                         rename(simtime_day = endday),
                       paste0(path_home_r(),
                              "/Soil/PEC/",
-                             lau_name[1]$LAU_NAME,
+                             lau_name[name]$LAU_NAME,
                              "_PEC_Soil_NL.csv"))
       
       write_excel_csv(soil_farm_mapinput |>
@@ -1154,24 +1155,24 @@ map_topsoil_riverwater_nl <- function(lau_name,
                         select(-c(sdrift_as_load, srunoff_as_load, LAU_NAME, conc_acsubst_total_soil_twa_ug.kg)) |> 
                         cbind(endday |>
                                 as.data.frame()) |> 
-                        cbind(lau_name[1] |> 
+                        cbind(lau_name[name] |> 
                                 as.data.frame()) |> 
                         rename(simtime_day = endday),
                       paste0(path_home_r(),
                              "/Soil/RQ/",
-                             lau_name[1]$LAU_NAME,
+                             lau_name[name]$LAU_NAME,
                              "_RQ_Soil_NL.csv"))
       
       write_excel_csv(soil_cumRQ |>
                         values() |> 
                         cbind(endday |>
                                 as.data.frame()) |> 
-                        cbind(lau_name[1] |> 
+                        cbind(lau_name[name] |> 
                                 as.data.frame()) |> 
                         rename(simtime_day = endday),
                       paste0(path_home_r(),
                              "/Soil/RQ/",
-                             lau_name[1]$LAU_NAME,
+                             lau_name[name]$LAU_NAME,
                              "_",
                              "RQcum_Soil_NL.csv")) 
       
@@ -1369,7 +1370,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         mutate(Crop = str_replace_all(Crop, "_", " "),
                Crop = str_to_sentence(Crop)) |> 
         # mutate(rq_acsubst_total_soil_twa = rq_acsubst_total_soil_twa) |>
-        mask(lau_name[1])
+        mask(lau_name[name])
       
       # Calculate cumulative RQ in soil for individual fields
       # Create a character type column showing a list of ASs and RQs for each field
@@ -1409,7 +1410,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                AS_rq = str_replace_all(AS_rq, "0.01$", "<0.01"),
                Crop = str_replace_all(Crop, "_", " "),
                Crop = str_to_sentence(Crop)) |>
-        mask(lau_name[1])
+        mask(lau_name[name])
 
       # Intersect farm loadings with river buffer segments
       # Calculate RQ for individual fields intersected with buffer around river segments
@@ -1422,7 +1423,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         terra::merge(chemprop[c("Active", "NOEC_fish_21_mg.L")], by.x = "acsubst", by.y = "Active") |>
         mutate(conc_mean_river_seg = srunoff_as_load+sdrift_as_load/dis_m3_pyr,
                rq_mean_river_seg_twa = conc_mean_river_seg/NOEC_fish_21_mg.L/1000) |> 
-        mask(lau_name[1])
+        mask(lau_name[name])
       
       farm_area_buff <- terra::merge(rivers_class_lau_buff,
                                      cbind(river_seg_mapinput[c("id", "length_m")] |> 
@@ -1491,7 +1492,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                AS_rq = str_remove_all(AS_rq, "\\("),
                AS_rq = str_remove_all(AS_rq, "\\)"),
                AS_rq = str_replace_all(AS_rq, "0.001", "<0.001")) |> 
-        mask(lau_name[1]) |>
+        mask(lau_name[name]) |>
         values()
         
         # Merge all values from the RQ dataframe with river buffer polygons
@@ -1570,15 +1571,15 @@ map_topsoil_riverwater_nl <- function(lau_name,
         actual_river_acsubst_name <- river_seg_mapinput$acsubst |> unique()
         
         # Soil PEC and RQ individual maps 
-        for (as in seq_along(acsubst_name <- actual_soil_acsubst_name[1])) {
+        for (as in seq_along(acsubst_name <- actual_soil_acsubst_name)) {
           
           # Store current substance name for progress updates
-          current_substance <- acsubst_name[1]
+          current_substance <- acsubst_name[as]
           
           # Prepare data
           # Prepare soil data
           soil_data <- soil_farm_mapinput |> 
-            filter(acsubst %in% acsubst_name[1])
+            filter(acsubst %in% acsubst_name[as])
           
           # Concentration maps palettes
           # Soil concentration palette
@@ -1613,7 +1614,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           # Concentration maps titles
           # Soil concentration map title
           soil_conc_title <- paste0(
-            acsubst_name[1], " ",
+            acsubst_name[as], " ",
             endday |> unique(),
             "-day PEC soil after 1x application in ",
             app_month,
@@ -1622,7 +1623,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
             sim_yr,
             ")",
             " in ",
-            lau_name[1]$LAU_NAME
+            lau_name[name]$LAU_NAME
           )
           
           # RQ maps titles
@@ -1637,7 +1638,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
             sim_yr,
             ")",
             " in ",
-            lau_name[1]$LAU_NAME
+            lau_name[name]$LAU_NAME
           )
           
           # AS concentration in topsoil
@@ -1648,7 +1649,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
             
             # Add district borders
             addPolylines(
-              data = lau_name[1],
+              data = lau_name[name],
               color = "black",
               weight = 0.75,
               opacity = 1,
@@ -1739,9 +1740,9 @@ map_topsoil_riverwater_nl <- function(lau_name,
           saveWidget(soil_as_conc, file = paste0(dir_create(path_home_r(),
                                                             "/Soil/PEC"),
                                                  "/", 
-                                                 paste0(lau_name[1]$LAU_NAME,
+                                                 paste0(lau_name[name]$LAU_NAME,
                                                         "_",
-                                                        acsubst_name[1],
+                                                        acsubst_name[as],
                                                         "_PEC_Soil_NL.html")), selfcontained = T)
           
           # Soil RQ maps for individual AS
@@ -1754,7 +1755,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
             
             # Add district borders
             addPolylines(
-              data = lau_name[1],
+              data = lau_name[name],
               color = "black",
               weight = 0.75,
               opacity = 1,
@@ -1835,17 +1836,17 @@ map_topsoil_riverwater_nl <- function(lau_name,
           saveWidget(soil_ind_rq_dist, file = paste0(dir_create(path_home_r(),
                                                                 "/Soil/RQ"),
                                                      "/", 
-                                                     paste0(lau_name[1]$LAU_NAME,
+                                                     paste0(lau_name[name]$LAU_NAME,
                                                             "_",
-                                                            acsubst_name[1],
+                                                            acsubst_name[as],
                                                             "_RQ_Soil_NL.html")), selfcontained = T)
         }
         
         # Water PEC and RQ individual maps 
-        for (as in seq_along(acsubst_name <- actual_river_acsubst_name[1])) {
+        for (as in seq_along(acsubst_name <- actual_river_acsubst_name)) {
           
           # Store current substance name for progress updates
-          current_substance <- acsubst_name[1]
+          current_substance <- acsubst_name[as]
           
           # Prepare data
           # Prepare river water data
@@ -1857,7 +1858,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                                        "rq_mean_river_seg_twa",
                                                                        "conc_mean_river_seg",
                                                                        "acsubst")] |> 
-                                                    filter(acsubst %in% acsubst_name[1]),
+                                                    filter(acsubst %in% acsubst_name[as]),
                                                   river_weight[c("id",
                                                                  "length_m",
                                                                  "river_w")] |> 
@@ -1877,6 +1878,8 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                      by = c("id",
                                             "length_m"))
           
+           
+        
           # Resize buffer size for better PEC and RQ surface water maps readability. PEC and RQ values remain unchanged.
           rivers_class_lau_buff_corr_pec <- rivers_class_lau |> filter(id %in% river_data$id) |> buffer(20)
           river_data_corr <- terra::intersect(rivers_class_lau_buff_corr_pec[""], river_data)
@@ -1924,7 +1927,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           # Concentration maps titles
           # River water concentration map title
           river_conc_title <- paste0(
-            acsubst_name[1], " ",
+            acsubst_name[as], " ",
             endday |> max(),
             "-day PEC<sub>time- and area-weighted</sub> surface water after 1x application in ",
             app_month,
@@ -1933,13 +1936,13 @@ map_topsoil_riverwater_nl <- function(lau_name,
             sim_yr,
             ")",
             " in ",
-            lau_name[1]$LAU_NAME
+            lau_name[name]$LAU_NAME
           )
           
           # RQ maps titles
           # River water RQ map title
           river_rq_title <- paste0(
-            acsubst_name[1], " ",
+            acsubst_name[as], " ",
             endday |> unique(),
             "-day individual RQ<sub>fish, area-weighted</sub> surface water after 1x application in ",
             app_month,
@@ -1948,7 +1951,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
             sim_yr,
             ")",
             " in ",
-            lau_name[1]$LAU_NAME
+            lau_name[name]$LAU_NAME
           )
           
           # AS concentration in river water
@@ -1959,7 +1962,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
             
             # Add district borders
             addPolylines(
-              data = lau_name[1],
+              data = lau_name[name],
               color = "black",
               weight = 0.75,
               opacity = 1,
@@ -2098,9 +2101,9 @@ map_topsoil_riverwater_nl <- function(lau_name,
           saveWidget(river_as_conc, file = paste0(dir_create(path_home_r(),
                                                              "/Water/PEC"),
                                                   "/", 
-                                                  paste0(lau_name[1]$LAU_NAME,
+                                                  paste0(lau_name[name]$LAU_NAME,
                                                          "_",
-                                                         acsubst_name[1],
+                                                         acsubst_name[as],
                                                          "_",
                                                          river_class_name,
                                                          "_PEC_Water_NL.html")), selfcontained = T)
@@ -2115,7 +2118,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
             
             # Add district borders
             addPolylines(
-              data = lau_name[1],
+              data = lau_name[name],
               color = "black",
               weight = 0.75,
               opacity = 1,
@@ -2244,9 +2247,9 @@ map_topsoil_riverwater_nl <- function(lau_name,
           saveWidget(river_ind_rq_dist, file = paste0(dir_create(path_home_r(),
                                                                  "/Water/RQ"),
                                                       "/", 
-                                                      paste0(lau_name[1]$LAU_NAME,
+                                                      paste0(lau_name[name]$LAU_NAME,
                                                              "_",
-                                                             acsubst_name[1],
+                                                             acsubst_name[as],
                                                              "_",
                                                              river_class_name,
                                                              "_RQ_Water_NL.html")), selfcontained = T)
@@ -2285,7 +2288,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           sim_yr,
           ")",
           " in ",
-          lau_name[1]$LAU_NAME
+          lau_name[name]$LAU_NAME
         )
         
         # Cumulative RQ water map title
@@ -2299,7 +2302,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           sim_yr,
           ")",
           " in ",
-          lau_name[1]$LAU_NAME
+          lau_name[name]$LAU_NAME
         )
         
         if (!pb$finished) pb$tick(tokens = list(map_type = "Creating cumulative Soil RQ map"))
@@ -2311,7 +2314,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           
           # Add district borders
           addPolylines(
-            data = lau_name[1],
+            data = lau_name[name],
             color = "black",
             weight = 0.5,
             opacity = 1,
@@ -2394,7 +2397,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         saveWidget(soil_cum_rq_dist,
                    file = paste0(path_home_r(),
                                  "/Soil/RQ/",
-                                 lau_name[1]$LAU_NAME,
+                                 lau_name[name]$LAU_NAME,
                                  "_RQcum_Soil_NL.html"),
                    selfcontained = T)
         
@@ -2403,12 +2406,12 @@ map_topsoil_riverwater_nl <- function(lau_name,
                           select(-c(LAU_NAME, rq_acsubst_total_soil_twa)) |> 
                           cbind(endday |>
                                   as.data.frame()) |> 
-                          cbind(lau_name[1] |> 
+                          cbind(lau_name[name] |> 
                                   as.data.frame()) |> 
                           rename(simtime_day = endday),
                         paste0(path_home_r(),
                                "/Soil/PEC/",
-                               lau_name[1]$LAU_NAME,
+                               lau_name[name]$LAU_NAME,
                                "_PEC_Soil_NL.csv"))
         
         write_excel_csv(soil_farm_mapinput |>
@@ -2416,24 +2419,24 @@ map_topsoil_riverwater_nl <- function(lau_name,
                           select(-c(LAU_NAME, conc_acsubst_total_soil_twa_ug.kg)) |> 
                           cbind(endday |>
                                   as.data.frame()) |> 
-                          cbind(lau_name[1] |> 
+                          cbind(lau_name[name] |> 
                                   as.data.frame()) |> 
                           rename(simtime_day = endday),
                         paste0(path_home_r(),
                                "/Soil/RQ/",
-                               lau_name[1]$LAU_NAME,
+                               lau_name[name]$LAU_NAME,
                                "_RQ_Soil_NL.csv"))
         
         write_excel_csv(soil_cumRQ |>
                           values() |> 
                           cbind(endday |>
                                   as.data.frame()) |> 
-                          cbind(lau_name[1] |> 
+                          cbind(lau_name[name] |> 
                                   as.data.frame()) |> 
                           rename(simtime_day = endday),
                         paste0(path_home_r(),
                                "/Soil/RQ/",
-                               lau_name[1]$LAU_NAME,
+                               lau_name[name]$LAU_NAME,
                                "_",
                                "RQcum_Soil_NL.csv")) 
         
@@ -2445,7 +2448,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           
           # Add district borders
           addPolylines(
-            data = lau_name[1],
+            data = lau_name[name],
             color = "black",
             weight = 0.75,
             opacity = 1,
@@ -2573,7 +2576,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         
         saveWidget(river_cum_rq_dist, file = paste0(path_home_r(),
                                                     "/Water/RQ/",
-                                                    lau_name[1]$LAU_NAME,
+                                                    lau_name[name]$LAU_NAME,
                                                     "_",
                                                     river_class_name,
                                                     "_RQcum_Water_NL.html"), selfcontained = T)  
@@ -2587,13 +2590,13 @@ map_topsoil_riverwater_nl <- function(lau_name,
                           values() |> 
                           cbind(endday |>
                                   as.data.frame()) |> 
-                          cbind(lau_name[1] |>
+                          cbind(lau_name[name] |>
                                   as.data.frame()) |> 
                           rename(conc_river_ug.dm3 = conc_mean_river_seg,
                                  simtime_day = endday),
                         paste0(path_home_r(),
                                "/Water/PEC/",
-                               lau_name[1]$LAU_NAME,
+                               lau_name[name]$LAU_NAME,
                                "_",
                                river_class_name,
                                "_PEC_Water_NL.csv"))
@@ -2605,12 +2608,12 @@ map_topsoil_riverwater_nl <- function(lau_name,
                           values() |> 
                           cbind(endday |>
                                   as.data.frame()) |> 
-                          cbind(lau_name[1] |>
+                          cbind(lau_name[name] |>
                                   as.data.frame()) |> 
                           rename(simtime_day = endday),
                         paste0(path_home_r(),
                                "/Water/RQ/",
-                               lau_name[1]$LAU_NAME,
+                               lau_name[name]$LAU_NAME,
                                "_",
                                river_class_name,
                                "_RQ_Water_NL.csv"))
@@ -2619,12 +2622,12 @@ map_topsoil_riverwater_nl <- function(lau_name,
                           values() |> 
                           cbind(endday |>
                                   as.data.frame()) |> 
-                          cbind(lau_name[1] |> 
+                          cbind(lau_name[name] |> 
                                   as.data.frame()) |> 
                           rename(simtime_day = endday),
                         paste0(path_home_r(),
                                "/Water/RQ/",
-                               lau_name[1]$LAU_NAME,
+                               lau_name[name]$LAU_NAME,
                                "_",
                                river_class_name,
                                "_RQcum_Water_NL.csv")) 

@@ -1,66 +1,149 @@
 library(tidyverse)
 library(fs)
+library(sf)
 library(terra)
+library(tmap)
+library(readxl)
 
 #########################################################
 ########### START: Model results evaluation #############
 #########################################################
 
 # Sampling coordinates needed for model evaluation. It can be also used to select LAUs where sampling took place #
-# CZ sampling site cooridnates
-# site_id_cz <- c("F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10",
-#                 "F11", "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20",
-#                 "F21", "F22", "F23", "F24")
-# 
-# site_id_lat_cz <- c(48.75428, 48.7651997, 49.5882283, 48.9971858, 48.8974494, 
-#                     48.9203217, 49.5573031, 49.7089406, 49.7190786, 50.5149308,
-#                     50.5392117, 50.4087597, 49.0598786, 49.0573903, 50.1286728,
-#                     50.2487525, 50.22116, 49.7082947, 48.9869569, 49.6619561,
-#                     49.7321864, 48.8276081, 48.8326775, 48.7364833)
-# 
-# site_id_lon_cz <- c(16.9401214, 16.9324394, 17.1860597, 16.9157722, 16.0395308,
-#                     15.9784944, 13.9029903, 14.8711725, 14.8851656, 16.196935,
-#                     16.1935875, 14.1494492, 15.4676047, 15.4676261, 16.2425311,
-#                     17.6263658, 15.9933244, 14.7895919, 17.0273617, 12.9795581,
-#                     12.9605036, 16.5171839, 16.4857483, 16.9331583)
-# 
-# site_coord_cz <- cbind(tibble(
-#   site_id = site_id_cz,
-#   long = site_id_lon_cz,
-#   lat = site_id_lat_cz)) |> 
-#   sf::st_as_sf(coords = c("long", "lat"), crs = st_crs(lau_cz)) |> 
-#   vect() |> 
-#   terra::intersect(lau_cz)
-# DK sampling site cooridnates
-# site_id_dk <- c("F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10",
-#                 "F11", "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20")
-# site_id_lat_dk <- c()
-# site_id_lon_dk <- c()
 
+# CZ sampling site coordinates
+lau_degurba_cz <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_4326.gpkg") |>
+  vect() |> 
+  tidyterra::filter(CNTR_CODE == "CZ")
+
+site_id_cz <- c("F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10", "F11", "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24")
+site_id_lat_cz <- c(48.75428, 48.7651997, 49.5882283, 48.9971858, 48.8974494, 48.9203217, 49.5573031, 49.7089406, 49.7190786, 50.5149308, 50.5392117, 50.4087597, 49.0598786, 49.0573903, 50.1286728, 50.2487525, 50.22116, 49.7082947, 48.9869569, 49.6619561, 49.7321864, 48.8276081, 48.8326775, 48.7364833)
+site_id_lon_cz <- c(16.9401214, 16.9324394, 17.1860597, 16.9157722, 16.0395308, 15.9784944, 13.9029903, 14.8711725, 14.8851656, 16.196935, 16.1935875, 14.1494492, 15.4676047, 15.4676261, 16.2425311, 17.6263658, 15.9933244, 14.7895919, 17.0273617, 12.9795581, 12.9605036, 16.5171839, 16.4857483, 16.9331583)
+
+site_coord_cz <- cbind(tibble(
+  site_id = site_id_cz,
+  long = site_id_lon_cz,
+  lat = site_id_lat_cz)) |>
+  sf::st_as_sf(coords = c("long", "lat"), crs = st_crs(lau_degurba_cz)) |>
+  vect() |>
+  terra::intersect(lau_degurba_cz)
+
+# NL sampling site coordinates
+lau_degurba_nl <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_4326.gpkg") |>
+  vect() |> 
+  tidyterra::filter(CNTR_CODE == "NL")
+
+site_id_nl <- c("F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10", "F11", "F12", "F13", "F14", "F15", "F16")
+site_id_lat_nl <- c(53.31, 53.32, 53.39, 53.38, 53.22, 53.4, 53.36, 53.39, 53.33, 53.28, 53.42, 53.35, 53.43, 53.38, 53.19, 53.32)
+site_id_lon_nl <- c(6.27, 6.13, 6.37, 6.33, 5.47, 6.42, 6.41, 6.03, 6.32, 6.26, 6.6, 6.46, 6.63, 6.34, 5.46, 6.33)
+
+site_coord_nl <- cbind(tibble(
+site_id = site_id_nl,
+long = site_id_lon_nl,
+lat = site_id_lat_nl)) |>
+  sf::st_as_sf(coords = c("long", "lat"), crs = st_crs(lau_degurba_nl)) |>
+  vect() |>
+  terra::intersect(lau_degurba_nl)
+
+# DK sampling site coordinates
+lau_degurba_dk <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_4326.gpkg") |>
+  vect() |> 
+  filter(CNTR_CODE == "DK")
+
+site_id_dk <- c("F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10", "F11", "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20")
+site_id_lat_dk <- c(57, 57, 56.5, 56.51, 56.43, 56.44, 56.95, 56.97, 56.57, 56.57, 56.34, 56.35, 56.81, 56.81, 56.2, 56.23, 56.75, 56.78, 56.53,56.53)
+site_id_lon_dk <- c(8.75, 8.73, 8.17, 8.28, 8.98, 8.94, 10.12, 10.16, 8.21, 8.19, 10.35, 10.37, 9.35, 9.35, 9.39, 9.4, 9.96, 9.89, 8.19, 8.21)
+
+site_coord_dk <- cbind(tibble(
+  site_id = site_id_dk,
+  long = site_id_lon_dk,
+  lat = site_id_lat_dk)) |>
+  sf::st_as_sf(coords = c("long", "lat"), crs = st_crs(lau_degurba_dk)) |>
+  vect() |>
+  terra::intersect(lau_degurba_dk)
+
+sampling_sites_map <- function(lau, site_coord){
+  
+  tmap_mode("plot")
+  basemap_lau <- tm_shape(lau) +
+    tm_borders(col = "black",
+               lty = "dashed",
+               lwd = 0.75) +
+    tm_basemap("Esri.WorldTopoMap", alpha = 0.75) +
+    # tmap_options(component.autoscale = T) +
+    tm_scalebar(position = c("right", "bottom"))
+  
+  layout_map <- tm_layout(legend.outside = T,
+                          legend.outside.position = "right",
+                          legend.outside.size = 0.5,
+                          legend.text.size = 0.5,
+                          legend.title.size = 0.75,
+                          main.title.fontface = "bold",
+                          scale = 1.25, 
+                          # main.title.size = 0.5
+  )
+  
+  basemap_lau +
+    layout_map +
+    tm_shape(lau) +
+    tm_borders(lwd = 0.15) +
+    tm_shape(lau |> filter(LAU_NAME %in% site_coord$LAU_NAME)) +
+    tm_polygons(fill = "LAU_NAME",
+                fill.scale = tm_scale(values = "poly.alphabet2"),
+                fill.legend = tm_legend("LAU (2024)", frame = F)) +
+    tm_shape(site_coord["site_id"]) +
+    tm_symbols(fill = "magenta",
+               size = .35,) +
+    tm_add_legend(type = "symbols",
+                  fill = "magenta",
+                  labels = "Sampling site",
+                  frame = F) + 
+    tm_title(paste0("Soil sampling locations (# of sites ", site_coord$site_id |> unique() |> length(), ")"))
+  
+}
+
+sampling_sites_map(lau_degurba_dk, site_coord_dk)
 
 # Evaluation dataset
-pec_soil <- dir_ls(path_home_r(),
-                   recurse = T,
-                   regexp = "2dist_3chem_topsoil_farm.gpkg") |> vect()
 
-gemup100 <-  dir_ls(path_home_r(), recurse = T, regexp = "gemup100") |> 
-  vect() |>
+lau_sample_cz <- lau_degurba_cz |> filter(LAU_NAME %in% site_coord_cz$LAU_NAME) |> distinct(LAU_NAME)
+lau_sample_nl <- lau_degurba_nl |> filter(LAU_NAME %in% site_coord_nl$LAU_NAME) |> distinct(LAU_NAME)
+lau_sample_dk <- lau_degurba_dk |> filter(LAU_NAME %in% site_coord_dk$LAU_NAME) |> distinct(LAU_NAME)
+
+gemup_cz <- dir_ls(path_home_r(), recurse = T, regexp = "gemup100") |> 
+  vect(extent = ext(lau_sample_cz[1])) |>
   filter(Active %in% c("acetamiprid", "tebuconazole", "glyphosate")) |> 
-  mutate(acsubst = Active |> str_to_title())
+  filter(str_detect(Crop,  regex("rape"))) |> 
+  mutate(acsubst = Active |> str_to_title()) |> 
+  mask(lau_degurba_cz |> filter(LAU_NAME %in% lau_sample_cz$LAU_NAME))
 
-gemup100_oilseed <- gemup100 |> 
-  filter(str_detect(Crop,  regex("rape")))
+plot(gemup_cz, "Crop")
 
-writeVector(gemup3_pecsoil, "gemup3chem_allcrop_2distr.gpkg")
+gemup_nl <- dir_ls(path_home_r(), recurse = T, regexp = "gemap_slim_nl") |> 
+  vect(extent = ext(lau_sample_nl[1])) |> 
+  filter(EU_name %in% c("Acetamiprid", "Tebuconazole", "Glyphosate")) |> 
+  filter(str_detect(EC_hcat_n,  regex("pota"))) |> 
+  mutate(acsubst = EU_name) |> 
+  mask(lau_degurba_nl |> filter(LAU_NAME %in% lau_sample_nl$LAU_NAME))
 
-gemup3_pecsoil <-merge(gemup100 |> 
-                         select(acsubst, Crop, ZKOD, CTVEREC, District), pec_soil |> 
-                         values(), all.y = T, by = c("ZKOD", "CTVEREC", "acsubst")) |>
-  filter(District %in% c("benešov", "břeclav"))
+gemup_dk <- dir_ls(path_home_r(), recurse = T, regexp = "gemap_3chem_dk") |> 
+  vect(extent = ext(lau_sample_dk[1])) |>
+  mutate(Active = case_when(
+    Active == "acetamiprid" ~ "Acetamiprid",
+    Active == "glyphosat" ~ "Glyphosate",
+    Active == "tebuconazol" ~ "Tebuconazole")) |> 
+filter(EC_trans_n %in% c("Winter wheat", "Spring barley", "Spring oats","Green grain of spring oats", "Winter rye", "Winter triticale", "Spring barley wholecrop", "Spring wheat"))
 
 
 # Add PEC and MEC soil data collected by Vera and Knuth et al. 2024
-Knuth14 <- terra::merge(site_coord_cz,
+
+read_excel(dir_ls(path_home_r(), regexp = "Knuth soil sampling", recurse = T), range = "A1:GO65") |> 
+  mutate(across(6:197, ~as.numeric(.))) |> 
+  pivot_longer(cols = -c(`SPRINT Sample code`, Country, Management,   Region, Crop),
+               names_to = "Active",
+               values_to = "Concentration_µg/kg")
+
+knuth_cz <- terra::merge(site_coord_cz,
                         bind_rows(tibble(acsubst = "Glyphosate",
                                          PEC_ug.kg = c(NA, 21.3, NA, NA, 46.7, 22.2, NA, NA, NA, NA, NA, NA, 42.1, NA, 59.69, NA, NA, NA, NA, NA, NA, NA, NA, NA)),
                                   tibble(acsubst = "Tebuconazole",
@@ -286,42 +369,6 @@ p_tebuconazole <- soil_conc_long %>%
     plot.background = element_rect(fill = "white", color = NA)
   )
 
-
-tmap_mode("plot")
-basemap_lau <- tm_shape(lau_cz) +
-  tm_borders(col = "black",
-             lty = "dashed",
-             lwd = 0.75) +
-  tm_basemap("Esri.WorldTopoMap", alpha = 0.75) +
-  # tmap_options(component.autoscale = T) +
-  tm_scalebar(position = c("right", "bottom"))
-
-layout_map <- tm_layout(legend.outside = T,
-                        legend.outside.position = "right",
-                        legend.outside.size = 0.5,
-                        legend.text.size = 0.5,
-                        legend.title.size = 0.75,
-                        main.title.fontface = "bold",
-                        scale = 1.25, 
-                        # main.title.size = 0.5
-)
-
-basemap_lau +
-  layout_map +
-  tm_shape(lau_cz) +
-  tm_borders(lwd = 0.15) +
-  tm_shape(lau_cz |> filter(LAU_NAME %in% lau_name$LAU_NAME)) +
-  tm_polygons(fill = "LAU_NAME",
-              fill.scale = tm_scale(values = "poly.alphabet2"),
-              fill.legend = tm_legend("LAU (2024)", frame = F)) +
-  tm_shape(Knuth14["site_id"]) +
-  tm_symbols(fill = "magenta",
-             size = .35,) +
-  tm_add_legend(type = "symbols",
-                fill = "magenta",
-                labels = "Sampling site",
-                frame = F) + 
-  tm_title("Soil sampling locations (# of sites 24)")
 
 # PLOTS
 crop_soilconc_plt <- function(as) {
