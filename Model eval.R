@@ -24,6 +24,7 @@ site_coord_cz <- cbind(tibble(
   site_id = site_id_cz,
   long = site_id_lon_cz,
   lat = site_id_lat_cz)) |>
+  mutate(site_id = paste0(site_id, "_cz")) |> 
   sf::st_as_sf(coords = c("long", "lat"), crs = st_crs(lau_degurba_cz)) |>
   vect() |>
   terra::intersect(lau_degurba_cz)
@@ -40,7 +41,8 @@ site_id_lon_nl <- c(6.27, 6.13, 6.37, 6.33, 5.47, 6.42, 6.41, 6.03, 6.32, 6.26, 
 site_coord_nl <- cbind(tibble(
 site_id = site_id_nl,
 long = site_id_lon_nl,
-lat = site_id_lat_nl)) |>
+lat = site_id_lat_nl)) |> 
+  mutate(site_id = paste0(site_id, "_nl")) |> 
   sf::st_as_sf(coords = c("long", "lat"), crs = st_crs(lau_degurba_nl)) |>
   vect() |>
   terra::intersect(lau_degurba_nl)
@@ -58,6 +60,7 @@ site_coord_dk <- cbind(tibble(
   site_id = site_id_dk,
   long = site_id_lon_dk,
   lat = site_id_lat_dk)) |>
+  mutate(site_id = paste0(site_id, "_dk")) |> 
   sf::st_as_sf(coords = c("long", "lat"), crs = st_crs(lau_degurba_dk)) |>
   vect() |>
   terra::intersect(lau_degurba_dk)
@@ -117,8 +120,6 @@ gemup_cz <- dir_ls(path_home_r(), recurse = T, regexp = "gemup100") |>
   mutate(acsubst = Active |> str_to_title()) |> 
   mask(lau_degurba_cz |> filter(LAU_NAME %in% lau_sample_cz$LAU_NAME))
 
-plot(gemup_cz, "Crop")
-
 gemup_nl <- dir_ls(path_home_r(), recurse = T, regexp = "gemap_slim_nl") |> 
   vect(extent = ext(lau_sample_nl[1])) |> 
   filter(EU_name %in% c("Acetamiprid", "Tebuconazole", "Glyphosate")) |> 
@@ -132,32 +133,20 @@ gemup_dk <- dir_ls(path_home_r(), recurse = T, regexp = "gemap_3chem_dk") |>
     Active == "acetamiprid" ~ "Acetamiprid",
     Active == "glyphosat" ~ "Glyphosate",
     Active == "tebuconazol" ~ "Tebuconazole")) |> 
-filter(EC_trans_n %in% c("Winter wheat", "Spring barley", "Spring oats","Green grain of spring oats", "Winter rye", "Winter triticale", "Spring barley wholecrop", "Spring wheat"))
-
+filter(EC_trans_n %in% c("Winter wheat", "Spring barley", "Spring oats","Green grain of spring oats", "Winter rye", "Winter triticale", "Spring barley wholecrop", "Spring wheat")) |> 
+  mask(lau_degurba_dk |> filter(LAU_NAME %in% lau_sample_dk$LAU_NAME))
 
 # Add PEC and MEC soil data collected by Vera and Knuth et al. 2024
-
-read_excel(dir_ls(path_home_r(), regexp = "Knuth soil sampling", recurse = T), range = "A1:GO65") |> 
+soil_mec_knuth <- read_excel(dir_ls(path_home_r(), regexp = "Knuth soil sampling", recurse = T), range = "A1:GO65") |> 
   mutate(across(6:197, ~as.numeric(.))) |> 
-  pivot_longer(cols = -c(`SPRINT Sample code`, Country, Management,   Region, Crop),
+  rename(Sample_code = `SPRINT Sample code`) |> 
+  pivot_longer(cols = -c(Sample_code, Country, Management, Region, Crop),
                names_to = "Active",
-               values_to = "Concentration_µg/kg")
-
-knuth_cz <- terra::merge(site_coord_cz,
-                        bind_rows(tibble(acsubst = "Glyphosate",
-                                         PEC_ug.kg = c(NA, 21.3, NA, NA, 46.7, 22.2, NA, NA, NA, NA, NA, NA, 42.1, NA, 59.69, NA, NA, NA, NA, NA, NA, NA, NA, NA)),
-                                  tibble(acsubst = "Tebuconazole",
-                                         PEC_ug.kg = c(88.6, NA, 54.1, 27.2,  23.3,  27.5, NA, 27.4, 47.4, 109.1, 24.8, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA)),
-                                  tibble(acsubst = "Acetamiprid",
-                                         PEC_ug.kg = c(NA, 20, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA))) |>
-                          cbind(tibble(Source = "Knuth et al. 2024",
-                                       Crop = "Oilseed rape",
-                                       site_id = site_coord_cz$site_id
-                          ), by = "site_id"))
-
+               values_to = "MEC_µg.kg") |> 
+  filter(!is.na(MEC_µg.kg)) |> 
+  filter(Active %in% c("Acetamiprid", "Tebuconazole", "Glyphosate"))
 
 eval_data <- terra::merge(Knuth14 |> 
-                            filter(!is.na(PEC_ug.kg)),
                           load_acsubst_farm |>
                             filter(Crop %in% c("Winter rape", "Spring rape")) |>
                             select(LAU_NAME,

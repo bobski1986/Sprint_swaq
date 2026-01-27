@@ -126,7 +126,7 @@ acsubst_name <- c("aclonifen",
                   "esfenvalerate",
                   "ethofumesate",
                   "fenpropidin",
-                  "fluazinam",
+                  # "fluazinam",
                   "fludioxonil",
                   "fluopyram",
                   "glyphosate",
@@ -156,7 +156,7 @@ acsubst_name <- c("aclonifen",
 # acsubst_name[which(!acsubst_name %in% ASs)]
 
 # Spatial extent #
-lau_name <- lau_degurba_nl[2 , "LAU_NAME"]
+lau_name <- lau_sample_nl[1]
 
 # Year of simulation #
 # Remains unchanged
@@ -199,7 +199,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                        "benzovindiflupyr",
                        "epoxiconazole",
                        "ethofumesate",
-                       "fluazinam",
+                       # "fluazinam",
                        "fluopyram",
                        "mandipropamid",
                        "pendimethalin",
@@ -301,6 +301,16 @@ map_topsoil_riverwater_nl <- function(lau_name,
     slope_nl_30as <- terrain_slope |> 
       crop(lau_name[name])
     
+    # ESDAC topsoil physical properties for Europe (based on LUCAS topsoil data) #
+    sand_jrc_nl <- sand |>
+      crop(lau_name[name], touches = T)
+
+    clay_jrc_nl <- clay |>
+      crop(lau_name[name], touches = T)
+    
+    budens_jrc_nl <- bulk_dens |>
+      crop(lau_name[name], touches = T)
+    
     # HYDROSHEDS (to be changed to ESDAC octop) Organic carbon content in topsoil #
     organic_carbon <- (organic_carbon  / (bulk_dens * 10000 * 0.05)) * 100
     organic_carbon <- organic_carbon |> rename(oc_perc = OC_jrc_NL)
@@ -308,17 +318,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
     orcarb_nl <- organic_carbon |>
       select("oc_perc") |>
       crop(lau_name[name])
-    
-    # ESDAC topsoil physical properties for Europe (based on LUCAS topsoil data) #
-    sand_jrc_nl <- sand |>
-      mask(lau_name[name], touches = T)
 
-    clay_jrc_nl <- clay |>
-      mask(lau_name[name], touches = T)
-    
-    budens_jrc_nl <- bulk_dens |>
-      crop(lau_name[name], touches = T)
-    
     # Crop specific spray drift values to the "gemup"
     spray_drift <- tibble(
       sdrift_dist_m =  c(1, 1, 1, 1,
@@ -451,7 +451,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                  fun = "mean",
                                  as.polygons = T) |>
         rename(!!paste0("prec_", app_month, "_mm") := !!prec_col_name)
-      
+
       orcarb_field <- terra::zonal(orcarb_nl,
                                    gemup_lau,
                                    fun = "mean",
@@ -475,7 +475,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                   # weights = T,
                                   # exact = T,
                                   as.polygons = TRUE) |> 
-        rename("slope_perc" = "TerrainSlope_30as_nl")
+        rename("slope_perc" = "TerrainSlope_30as_nl") 
       
       sand_field <- terra::zonal(sand_jrc_nl,
                                  gemup_lau,
@@ -501,6 +501,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                    # exact = T,
                                    as.polygons = TRUE) |>
         rename("bulk_dens" = "budens_jrc_NL")
+      
     
       # Patch size of arable land in a river basins and district
       crop_area_tot_lau <- gemup_lau |>
@@ -526,7 +527,6 @@ map_topsoil_riverwater_nl <- function(lau_name,
       
       # Get the precipitation column name for binding
       prec_field_col <- paste0("prec_", app_month, "_mm")
-      
       # Model subroutines related to pesticide runoff from individual farms
       load_acsubst_farm <- acsubst_application_lau |>
         cbind(prec_field[prec_field_col] |>
@@ -578,14 +578,15 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                                  v = frac_asubst_soil_solid_ini),
                                                             \(x,y,z,v) (x/(y*5))*(z+v))) |> 
         ## TWA concentration in soil
-        mutate(conc_acsubst_total_soil_twa_ug.kg = (conc_acsubst_total_soil_ini_ug.kg / (endday * (log(2) / DT50_typical_d))) * (1 - exp(-56 * (log(2) / DT50_typical_d)))) |> 
+        mutate(conc_acsubst_total_soil_56twa_ug.kg = (conc_acsubst_total_soil_ini_ug.kg / (56 * (log(2) / DT50_typical_d))) * (1 - exp(-56 * (log(2) / DT50_typical_d))),
+               conc_acsubst_total_soil_365twa_ug.kg = (conc_acsubst_total_soil_ini_ug.kg / (365 * (log(2) / DT50_typical_d))) * (1 - exp(-365 * (log(2) / DT50_typical_d)))) |> 
         ## Effect of terrain slope
         mutate(slope_effect = map_dbl(slope_perc,
                                       ~if_else(. <= 20,
                                                0.001423 * .^2 + 0.02153 * .,
                                                1))) |>
         ##Soil chronic RQ
-        mutate(rq_acsubst_total_soil_twa = conc_acsubst_total_soil_twa_ug.kg/NOEC_earthworm_chron_repr_mg.kg) |> 
+        mutate(rq_acsubst_total_soil_twa = conc_acsubst_total_soil_56twa_ug.kg/NOEC_earthworm_chron_repr_mg.kg) |> 
         ## Fraction of daily generated surface runoff. Mean, min, max are calculated over meteorological station within the basins
         ## Add code to match rainfall to AS application period for a given crop!!!!
         mutate(srunoff_month_sandy.mm = map_dbl(prec_month_mm,
@@ -608,7 +609,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         ## Application rate correction
         mutate(aprate_farm_kg.ha = map2_dbl(aprate_farm_g.ha,
                                             sdrift_as_load,
-                                            ~.x-.y)/1000) |> 
+                                            ~.x-.y)) |> 
         ## AS surface runoff loading
         mutate(srunoff_as_load = pmap_dbl(list(field_area,
                                                aprate_farm_kg.ha,
@@ -616,7 +617,8 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                frac_asubst_soil_water_lag,
                                                slope_effect,
                                                srunoff_tot_frac),
-                                          prod))
+                                          prod)) |> 
+        filter(!is.na(oc_perc) & !is.na(clay_perc))
       
       # Combine AS concentration in soil results on individual farms
       # Calculate RQ for individual farms and individual AS
@@ -625,7 +627,9 @@ map_topsoil_riverwater_nl <- function(lau_name,
                objectid,
                Crop,
                acsubst,
-               conc_acsubst_total_soil_twa_ug.kg,
+               aprate_farm_kg.ha,
+               conc_acsubst_total_soil_ini_ug.kg,
+               conc_acsubst_total_soil_56twa_ug.kg,
                rq_acsubst_total_soil_twa,
                srunoff_as_load,
                sdrift_as_load) |> 
@@ -752,21 +756,21 @@ map_topsoil_riverwater_nl <- function(lau_name,
         # Prepare soil data
         soil_data <- soil_farm_mapinput |> 
           filter(acsubst %in% acsubst_name[as])
-        
+   
         # Concentration maps palettes
         # Soil concentration palette
         
         soil_conc_pal <- colorBin(
           palette = "BuPu",
-          domain = soil_data$conc_acsubst_total_soil_twa_ug.kg,
-          bins = pretty(soil_data$conc_acsubst_total_soil_twa_ug.kg),
+          domain = soil_data$conc_acsubst_total_soil_56twa_ug.kg,
+          bins = pretty(soil_data$conc_acsubst_total_soil_56twa_ug.kg),
           na.color = "#ffdeaf"
         )
         
         soil_conc_pal_rev <- colorBin(
           palette = "BuPu",
-          domain = soil_data$conc_acsubst_total_soil_twa_ug.kg,
-          bins = pretty(soil_data$conc_acsubst_total_soil_twa_ug.kg),
+          domain = soil_data$conc_acsubst_total_soil_56twa_ug.kg,
+          bins = pretty(soil_data$conc_acsubst_total_soil_56twa_ug.kg),
           na.color = "#ffdeaf",
           reverse = T,
         )
@@ -832,7 +836,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           # Add soil concentration polygons
           addPolygons(
             data = soil_data,
-            fillColor = ~soil_conc_pal(conc_acsubst_total_soil_twa_ug.kg),
+            fillColor = ~soil_conc_pal(conc_acsubst_total_soil_56twa_ug.kg),
             fillOpacity = 0.85,
             color = "black",
             weight = 0.25,
@@ -840,9 +844,9 @@ map_topsoil_riverwater_nl <- function(lau_name,
             popup = ~paste0("<b>Field ID: </b>", "<b>", objectid, "</b>", "<br>",
                             "<b>Crop: </b>", "<b>", Crop, "</b>", "<br>",
                             "<b>Individual PEC soil (µg × kg⁻¹): </b>", "<b>",
-                            ifelse(is.na(conc_acsubst_total_soil_twa_ug.kg), 
+                            ifelse(is.na(conc_acsubst_total_soil_56twa_ug.kg), 
                                    "Missing values",
-                                   format_power10(conc_acsubst_total_soil_twa_ug.kg,  digits = 2)), "</b>"),
+                                   format_power10(conc_acsubst_total_soil_56twa_ug.kg,  digits = 2)), "</b>"),
             highlightOptions = highlightOptions(color = "black",
                                                 weight = 3,
                                                 bringToFront = TRUE),
@@ -858,7 +862,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           # Add legend
           addLegend(
             pal = soil_conc_pal_rev,
-            values = soil_data$conc_acsubst_total_soil_twa_ug.kg,
+            values = soil_data$conc_acsubst_total_soil_56twa_ug.kg,
             title = "Individual PEC soil<br>(time-weighted) (µg × kg⁻¹)",
             group = "Individual fields",
             position = "bottomright",
@@ -1152,7 +1156,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
       
       write_excel_csv(soil_farm_mapinput |>
                         values()  |> 
-                        select(-c(sdrift_as_load, srunoff_as_load, LAU_NAME, conc_acsubst_total_soil_twa_ug.kg)) |> 
+                        select(-c(LAU_NAME)) |> 
                         cbind(endday |>
                                 as.data.frame()) |> 
                         cbind(lau_name[name] |> 
@@ -1316,14 +1320,15 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                                  v = frac_asubst_soil_solid_ini),
                                                             \(x,y,z,v) (x/(y*5))*(z+v))) |> 
         ## TWA concentration in soil
-        mutate(conc_acsubst_total_soil_twa_ug.kg = (conc_acsubst_total_soil_ini_ug.kg / (endday * (log(2) / DT50_typical_d))) * (1 - exp(-56 * (log(2) / DT50_typical_d)))) |> 
+        mutate(conc_acsubst_total_soil_56twa_ug.kg = (conc_acsubst_total_soil_ini_ug.kg / (56 * (log(2) / DT50_typical_d))) * (1 - exp(-56 * (log(2) / DT50_typical_d))),
+               conc_acsubst_total_soil_365twa_ug.kg = (conc_acsubst_total_soil_ini_ug.kg / (365 * (log(2) / DT50_typical_d))) * (1 - exp(-365 * (log(2) / DT50_typical_d)))) |> 
         ## Effect of terrain slope
         mutate(slope_effect = map_dbl(slope_perc,
                                       ~if_else(. <= 20,
                                                0.001423 * .^2 + 0.02153 * .,
                                                1))) |>
         ##Soil chronic RQ
-        mutate(rq_acsubst_total_soil_twa = conc_acsubst_total_soil_twa_ug.kg/NOEC_earthworm_chron_repr_mg.kg) |> 
+        mutate(rq_acsubst_total_soil_twa = conc_acsubst_total_soil_56twa_ug.kg/NOEC_earthworm_chron_repr_mg.kg) |> 
         ## Fraction of daily generated surface runoff. Mean, min, max are calculated over meteorological station within the basins
         ## Add code to match rainfall to AS application period for a given crop!!!!
         mutate(srunoff_month_sandy.mm = map_dbl(prec_month_mm,
@@ -1346,7 +1351,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         ## Application rate correction
         mutate(aprate_farm_kg.ha = map2_dbl(aprate_farm_g.ha,
                                             sdrift_as_load,
-                                            ~.x-.y)/1000) |> 
+                                            ~.x-.y)) |> 
         ## AS surface runoff loading
         mutate(srunoff_as_load = pmap_dbl(list(field_area,
                                                aprate_farm_kg.ha,
@@ -1354,7 +1359,8 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                frac_asubst_soil_water_lag,
                                                slope_effect,
                                                srunoff_tot_frac),
-                                          prod))
+                                          prod)) |> 
+        filter(!is.na(oc_perc) & !is.na(clay_perc))
       
       # Combine AS concentration in soil results on individual farms
       # Calculate RQ for individual farms and individual AS
@@ -1363,7 +1369,9 @@ map_topsoil_riverwater_nl <- function(lau_name,
                objectid,
                Crop,
                acsubst,
-               conc_acsubst_total_soil_twa_ug.kg,
+               aprate_farm_kg.ha,
+               conc_acsubst_total_soil_ini_ug.kg,
+               conc_acsubst_total_soil_56twa_ug.kg,
                rq_acsubst_total_soil_twa,
                srunoff_as_load,
                sdrift_as_load) |> 
@@ -1448,8 +1456,6 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                    by = c("id", "length_m")) |> 
         mutate(river_w = case_when(river_class_name == "3_6" ~ (length_m*4)/(buffer_area.m*(farm_buff_area.m/buffer_area.m)),
                                    river_class_name |> str_extract("0.5_3") == "0.5_3" ~ (length_m*1.5)/(buffer_area.m*(farm_buff_area.m/buffer_area.m))))
-      
-      
       
       # Calculate cumulative RQ for fields in river buffer for individual river segments
       # Create a character type column showing a list of ASs and RQs for each river segment
@@ -1586,15 +1592,15 @@ map_topsoil_riverwater_nl <- function(lau_name,
           
           soil_conc_pal <- colorBin(
             palette = "BuPu",
-            domain = soil_data$conc_acsubst_total_soil_twa_ug.kg,
-            bins = pretty(soil_data$conc_acsubst_total_soil_twa_ug.kg),
+            domain = soil_data$conc_acsubst_total_soil_56twa_ug.kg,
+            bins = pretty(soil_data$conc_acsubst_total_soil_56twa_ug.kg),
             na.color = "#ffdeaf"
           )
           
           soil_conc_pal_rev <- colorBin(
             palette = "BuPu",
-            domain = soil_data$conc_acsubst_total_soil_twa_ug.kg,
-            bins = pretty(soil_data$conc_acsubst_total_soil_twa_ug.kg),
+            domain = soil_data$conc_acsubst_total_soil_56twa_ug.kg,
+            bins = pretty(soil_data$conc_acsubst_total_soil_56twa_ug.kg),
             na.color = "#ffdeaf",
             reverse = T,
           )
@@ -1660,7 +1666,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
             # Add soil concentration polygons
             addPolygons(
               data = soil_data,
-              fillColor = ~soil_conc_pal(conc_acsubst_total_soil_twa_ug.kg),
+              fillColor = ~soil_conc_pal(conc_acsubst_total_soil_56twa_ug.kg),
               fillOpacity = 0.85,
               color = "black",
               weight = 0.25,
@@ -1668,9 +1674,9 @@ map_topsoil_riverwater_nl <- function(lau_name,
               popup = ~paste0("<b>Field ID: </b>", "<b>", objectid, "</b>", "<br>",
                               "<b>Crop: </b>", "<b>", Crop, "</b>", "<br>",
                               "<b>Individual PEC soil (µg × kg⁻¹): </b>", "<b>",
-                              ifelse(is.na(conc_acsubst_total_soil_twa_ug.kg), 
+                              ifelse(is.na(conc_acsubst_total_soil_56twa_ug.kg), 
                                      "Missing values",
-                                     format_power10(conc_acsubst_total_soil_twa_ug.kg,  digits = 2)), "</b>"),
+                                     format_power10(conc_acsubst_total_soil_56twa_ug.kg,  digits = 2)), "</b>"),
               highlightOptions = highlightOptions(color = "black",
                                                   weight = 3,
                                                   bringToFront = TRUE),
@@ -1686,7 +1692,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
             # Add legend
             addLegend(
               pal = soil_conc_pal_rev,
-              values = soil_data$conc_acsubst_total_soil_twa_ug.kg,
+              values = soil_data$conc_acsubst_total_soil_56twa_ug.kg,
               title = "Individual PEC soil<br>(time-weighted) (µg × kg⁻¹)",
               group = "Individual fields",
               position = "bottomright",
@@ -2416,7 +2422,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         
         write_excel_csv(soil_farm_mapinput |>
                           values()  |> 
-                          select(-c(LAU_NAME, conc_acsubst_total_soil_twa_ug.kg)) |> 
+                          select(-c(LAU_NAME)) |> 
                           cbind(endday |>
                                   as.data.frame()) |> 
                           cbind(lau_name[name] |> 
