@@ -126,7 +126,7 @@ acsubst_name <- c("dimoxystrobin", "difenoconazole", "boscalid", "fluazinam",
 # 2) use single values in brackets separated with commas to select multiple LAUs e.g., c(1,3,77),
 # 3) use ranges to select consecutive LAUs e.g., c(1:5, 64:73), 
 # 4) use correctly spelled LAU names instead of integers
-lau_name <- lau_sample_cz[1]
+lau_name <- lau_okres_cz[1, "LAU_NAME"]
 
 # Year of simulation #
 # Remains unchanged
@@ -1539,11 +1539,12 @@ map_topsoil_riverwater_cz <- function(lau_name,
     river_seg_mapinput <- soil_farm_mapinput[c("srunoff_as_load",
                                                "acsubst",
                                                "District")] |>
-      filter(acsubst %in% acsubst_soil) |> 
+      filter(acsubst %in% acsubst_water) |>
       terra::intersect(rivers_lau_buff_seg[c("HYDROID", "NAMN1", "SHAPE_Leng", "dis_m3_pyr")]) |>
       terra::merge(chemprop[c("Active", "NOEC_fish_21_mg.L")], by.x = "acsubst", by.y = "Active") |>
+      group_by(HYDROID, NAMN1, SHAPE_Leng) |> 
       mutate(conc_mean_river_seg = srunoff_as_load/dis_m3_pyr,
-             rq_mean_river_seg_twa = conc_mean_river_seg/NOEC_fish_21_mg.L/1000) |> 
+             rq_mean_river_seg_twa = conc_mean_river_seg/(NOEC_fish_21_mg.L*1000)) |> 
       mask(lau_name[name])
     
     farm_area_buff <- terra::merge(rivers_lau_buff_seg,
@@ -1565,8 +1566,8 @@ map_topsoil_riverwater_cz <- function(lau_name,
     river_weight <- terra::merge(farm_area_buff, buff_area |>
                                    values(),
                                  by = c("HYDROID", "NAMN1", "SHAPE_Leng")) |> 
-      mutate(river_w = (SHAPE_Leng*WD7)/buffer_area.m*(farm_buff_area.m/buffer_area.m))
-    
+      mutate(river_w = (SHAPE_Leng*WD7/buffer_area.m)*(farm_buff_area.m/buffer_area.m))
+
     # Calculate cumulative RQ for fields in river buffer for individual river segments
     # Create a character type column showing a list of ASs and RQs for each river segment 
     river_RQ_nest <- terra::merge(river_seg_mapinput,
@@ -1578,8 +1579,8 @@ map_topsoil_riverwater_cz <- function(lau_name,
       arrange(desc(rq_mean_river_seg_twa), .by_group = T) |>
       distinct(acsubst, .keep_all = T) |>
       mutate(nr_fields = n(),
-             rq_mean_river_seg_twa = round(rq_mean_river_seg_twa*river_w, 3),
-             rq_mean_river_seg_twa = case_when(rq_mean_river_seg_twa < 0.001 ~ 0.001,
+             rq_mean_river_seg_twa = round(rq_mean_river_seg_twa*river_w, 6),
+             rq_mean_river_seg_twa = case_when(rq_mean_river_seg_twa < 0.000001 ~ 0.000001,
                                                .default = rq_mean_river_seg_twa)) |> 
       # filter(rq_mean_river_seg_twa >= 0.001) |>
       unite("AS_rq", acsubst, rq_mean_river_seg_twa, sep = " | ", remove = FALSE) |>
@@ -1593,7 +1594,7 @@ map_topsoil_riverwater_cz <- function(lau_name,
                                  values(),
                                by =  c("HYDROID", "NAMN1", "SHAPE_Leng")) |> 
       group_by(District, HYDROID, NAMN1, SHAPE_Leng) |>
-      summarise(sum_rq_mean_river_seg_twa = max(rq_mean_river_seg_twa * river_w), .groups = "keep") |> 
+      summarise(sum_rq_mean_river_seg_twa = sum(round(rq_mean_river_seg_twa*river_w, 6)), .groups = "keep") |> 
       ungroup() |>
       select(-District) |>
       makeValid()
@@ -1608,7 +1609,7 @@ map_topsoil_riverwater_cz <- function(lau_name,
              AS_rq = str_remove_all(AS_rq, "="),
              AS_rq = str_remove_all(AS_rq, "\\("),
              AS_rq = str_remove_all(AS_rq, "\\)"),
-             AS_rq = str_replace_all(AS_rq, "0.001", "<0.001")) |> 
+             AS_rq = str_replace_all(AS_rq, "0.000001", "<0.000001")) |> 
       mask(lau_name[name]) |> 
       values()
     
@@ -1686,287 +1687,287 @@ map_topsoil_riverwater_cz <- function(lau_name,
     actual_soil_acsubst_name <- soil_farm_mapinput$acsubst |> unique()
     actual_river_acsubst_name <- river_seg_mapinput$acsubst |> unique()
     
-    # Soil PEC and RQ individual maps 
-    for (as in seq_along(acsubst_name <- actual_soil_acsubst_name)) {
-      
-      # Store current substance name for progress updates
-      current_substance <- acsubst_name[as]
-      
-      # Prepare data
-      # Prepare soil data
-      soil_data <- soil_farm_mapinput |> 
-        filter(acsubst %in% acsubst_name[as])
-      
-      # Concentration maps palettes
-      # Soil concentration palette
-      
-      soil_conc_pal <- colorBin(
-        palette = "BuPu",
-        domain = soil_data$conc_acsubst_total_soil_56twa_ug.kg,
-        bins = pretty(soil_data$conc_acsubst_total_soil_56twa_ug.kg),
-        na.color = "#ffdeaf"
-      )
-      
-      soil_conc_pal_rev <- colorBin(
-        palette = "BuPu",
-        domain = soil_data$conc_acsubst_total_soil_56twa_ug.kg,
-        bins = pretty(soil_data$conc_acsubst_total_soil_56twa_ug.kg),
-        na.color = "#ffdeaf",
-        reverse = T,
-      )
-      
-      # RQ maps palettes
-      # Soil RQ palette
-      soil_rq_colors <- brewer.pal(11, "PRGn")[c(1,2,3,4,5,8,9,10)]
-      
-      soil_rq_pal <- colorBin(
-        palette = soil_rq_colors |> rev(),
-        domain = soil_data$rq_acsubst_total_soil_twa,
-        bins = c(0, 0.2, 1, 2, 3, 5, 500),
-        na.color = "#ffdeaf"
-      )
-      
-      # Map titles
-      # Concentration maps titles
-      # Soil concentration map title
-      soil_conc_title <- paste0(
-        acsubst_name[as], " ",
-        endday |> unique(),
-        "-day PEC soil after 1x application in ",
-        app_month,
-        " ",
-        "(",
-        sim_yr,
-        ")",
-        " in ",
-        lau_name[name]$LAU_NAME
-      )
-      
-      # RQ maps titles
-      # Soil RQ map title
-      soil_rq_title <- paste0(
-        acsubst_name[as], " ",
-        endday |> unique(),
-        "-day RQ<sub>earthworm</sub> soil after 1x application in ",
-        app_month,
-        " ",
-        "(",
-        sim_yr,
-        ")",
-        " in ",
-        lau_name[name]$LAU_NAME
-      )
-      
-      # AS concentration in topsoil
-      if (!pb$finished) pb$tick(tokens = list(map_type = "Creating Soil PEC map", substance = current_substance))
-      
-      soil_as_conc <- leaflet() |>
-        addTiles(options = tileOptions(opacity = 0.5)) |> 
-        
-        # Add district borders
-        addPolylines(
-          data = lau_name[name],
-          color = "black",
-          weight = 0.75,
-          opacity = 1,
-          fillOpacity = 0,
-          group = "Administrative borders"
-        ) |>
-        
-        # Add soil concentration polygons
-        addPolygons(
-          data = soil_data,
-          fillColor = ~soil_conc_pal(conc_acsubst_total_soil_56twa_ug.kg),
-          fillOpacity = 0.85,
-          color = "black",
-          weight = 0.25,
-          opacity = 1,
-          popup = ~paste0("<b>Field ID: </b>", "<b>", ZKOD, " (ZKOD)", ", ", CTVEREC, " (CTVEREC)", "</b>", "<br>",
-                          "<b>Crop: </b>", "<b>", Crop, "</b>", "<br>",
-                          "<b>Individual PEC soil (µg × kg⁻¹): </b>", "<b>",
-                          ifelse(is.na(conc_acsubst_total_soil_56twa_ug.kg), 
-                                 "Missing values",
-                                 format_power10(conc_acsubst_total_soil_56twa_ug.kg,  digits = 2)), "</b>"),
-          highlightOptions = highlightOptions(color = "black",
-                                              weight = 3,
-                                              bringToFront = TRUE),
-          group = "Individual fields"
-        ) |> 
-        
-        # Add layer controls
-        addLayersControl(
-          overlayGroups = c("Administrative borders", "Individual fields"),
-          options = layersControlOptions(collapsed = FALSE)
-        ) |>
-        
-        # Add legend
-        addLegend(
-          pal = soil_conc_pal_rev,
-          values = soil_data$conc_acsubst_total_soil_56twa_ug.kg,
-          title = "Individual PEC soil<br>(time-weighted) (µg × kg⁻¹)",
-          group = "Individual fields",
-          position = "bottomright",
-          opacity = 0.75,
-          na.label = "Missing values",
-          labFormat = function(type, cuts, p) {
-            n <- length(cuts)
-            cuts <- sort(cuts, decreasing = TRUE)
-            paste0(sapply(cuts[-1], format_power10, digits = 2), 
-                   " to ", 
-                   sapply(cuts[-n], format_power10, digits = 2))
-          }
-        ) |>
-        
-        # Add scale bar
-        addScaleBar(position = "bottomleft") |>
-        
-        # Add title using custom HTML control
-        addControl(html = paste0("<div style='padding: 8px 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); ",
-                                 "font-size: 14px; font-weight: bold; max-width: calc(100vw - 350px); ",
-                                 "width: fit-content; line-height: 1.5; word-wrap: break-word; z-index: 1000;'>",
-                                 soil_conc_title, 
-                                 "</div>"),
-                   position = "topleft") |> 
-        addControl(html = "", position = "bottomleft") %>%
-        htmlwidgets::onRender("
-    function(el, x) {
-      if (this._controlCorners) {
-        var existingZoom = this._controlCorners.topleft.querySelector('.leaflet-control-zoom');
-        if (existingZoom) {
-          existingZoom.remove();
-        }
-      }
-      
-      var zoomControl = L.control.zoom({
-        position: 'bottomleft'
-      });
-      zoomControl.addTo(this);
-      
-      var titleControl = document.querySelector('.leaflet-top.leaflet-left .leaflet-control');
-        if (titleControl) {
-          window.addEventListener('resize', function() {
-            var mapWidth = el.offsetWidth;
-            var maxWidth = Math.max(200, mapWidth - 350);
-            titleControl.style.maxWidth = maxWidth + 'px';
-          });
-        }
-    }
-  ")
-      
-      saveWidget(soil_as_conc, file = paste0(dir_create(path_home_r(),
-                                                        "/Soil/PEC"),
-                                             "/", 
-                                             paste0(lau_name[name]$LAU_NAME,
-                                                    "_",
-                                                    acsubst_name[as],
-                                                    "_PEC_Soil_CZ.html")), selfcontained = T)
-      
-      # Soil RQ maps for individual AS
-      # Create the leaflet map
-      if (!pb$finished) pb$tick(tokens = list(map_type = "Creating Soil RQ map", substance = current_substance))
-      
-      soil_ind_rq_dist <- leaflet() |>
-        # Add OpenStreetMap tiles with transparency
-        addTiles(options = tileOptions(opacity = 0.5)) |> 
-        
-        # Add district borders
-        addPolylines(
-          data = lau_name[name],
-          color = "black",
-          weight = 0.75,
-          opacity = 1,
-          fillOpacity = 0,
-          group = "Administrative borders"
-        ) |>
-        
-        # Add soil RQ polygons
-        addPolygons(
-          data = soil_data,
-          fillColor = ~soil_rq_pal(rq_acsubst_total_soil_twa),
-          fillOpacity = 0.85,
-          color = "black",
-          weight = 0.25,
-          opacity = 1,
-          popup = ~paste0("<b>Field ID: </b>", "<b>", ZKOD, " (ZKOD)", ", ", CTVEREC, " (CTVEREC)", "</b>", "<br>",
-                          "<b>Crop: </b>", "<b>", Crop, "</b>", "<br>",
-                          "<b>Individual RQ soil: </b>", "<b>", 
-                          ifelse(is.na(rq_acsubst_total_soil_twa), 
-                                 "Missing values", 
-                                 format_power10(rq_acsubst_total_soil_twa, digits = 3)), "</b>"),
-          highlightOptions = highlightOptions(color = "black",
-                                              weight = 3,
-                                              bringToFront = TRUE),
-          group = "Individual fields"
-        ) |>
-        
-        # Add layer controls
-        addLayersControl(
-          overlayGroups = c("Administrative borders", "Individual fields"),
-          options = layersControlOptions(collapsed = FALSE)
-        ) |>
-        
-        # Add scale bar
-        addScaleBar(position = "bottomleft") |> 
-        
-        # Add custom legend
-        addLegend(
-          colors = soil_rq_colors,
-          labels = c("\u2265 5", "\u2265 4", "\u2265 3", "\u2265 2", "\u2265 1", "\u003c 1", "\u2265 0.2", "\u003c 0.2"),
-          title = "Individual RQ soil",
-          position = "bottomright",
-          group = "Individual fields",
-          opacity = 1
-        ) |> 
-        addControl(html = paste0("<div style='padding: 8px 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); ",
-                                 "font-size: 14px; font-weight: bold; max-width: calc(100vw - 350px); ",
-                                 "width: fit-content; line-height: 1.5; word-wrap: break-word; z-index: 1000;'>",
-                                 soil_rq_title, 
-                                 "</div>"),
-                   position = "topleft") |> 
-        addControl(html = "", position = "bottomleft") %>%
-        htmlwidgets::onRender("
-    function(el, x) {
-      if (this._controlCorners) {
-        var existingZoom = this._controlCorners.topleft.querySelector('.leaflet-control-zoom');
-        if (existingZoom) {
-          existingZoom.remove();
-        }
-      }
-      
-      var zoomControl = L.control.zoom({
-        position: 'bottomleft'
-      });
-      zoomControl.addTo(this);
-      
-     var titleControl = document.querySelector('.leaflet-top.leaflet-left .leaflet-control');
-        if (titleControl) {
-          window.addEventListener('resize', function() {
-            var mapWidth = el.offsetWidth;
-            var maxWidth = Math.max(200, mapWidth - 350);
-            titleControl.style.maxWidth = maxWidth + 'px';
-          });
-        }
-    }
-  ")
-      
-      saveWidget(soil_ind_rq_dist, file = paste0(dir_create(path_home_r(),
-                                                            "/Soil/RQ"),
-                                                 "/", 
-                                                 paste0(lau_name[name]$LAU_NAME,
-                                                        "_",
-                                                        acsubst_name[as],
-                                                        "_RQ_Soil_CZ.html")), selfcontained = T)
-    }
+  # Soil PEC and RQ individual maps 
+  #   for (as in seq_along(acsubst_name <- actual_soil_acsubst_name)) {
+  #     
+  #     # Store current substance name for progress updates
+  #     current_substance <- acsubst_name[as]
+  #     
+  #     # Prepare data
+  #     # Prepare soil data
+  #     soil_data <- soil_farm_mapinput |> 
+  #       filter(acsubst %in% acsubst_name[as])
+  #     
+  #     # Concentration maps palettes
+  #     # Soil concentration palette
+  #     
+  #     soil_conc_pal <- colorBin(
+  #       palette = "BuPu",
+  #       domain = soil_data$conc_acsubst_total_soil_56twa_ug.kg,
+  #       bins = pretty(soil_data$conc_acsubst_total_soil_56twa_ug.kg),
+  #       na.color = "#ffdeaf"
+  #     )
+  #     
+  #     soil_conc_pal_rev <- colorBin(
+  #       palette = "BuPu",
+  #       domain = soil_data$conc_acsubst_total_soil_56twa_ug.kg,
+  #       bins = pretty(soil_data$conc_acsubst_total_soil_56twa_ug.kg),
+  #       na.color = "#ffdeaf",
+  #       reverse = T,
+  #     )
+  #     
+  #     # RQ maps palettes
+  #     # Soil RQ palette
+  #     soil_rq_colors <- brewer.pal(11, "PRGn")[c(1,2,3,4,5,8,9,10)]
+  #     
+  #     soil_rq_pal <- colorBin(
+  #       palette = soil_rq_colors |> rev(),
+  #       domain = soil_data$rq_acsubst_total_soil_twa,
+  #       bins = c(0, 0.2, 1, 2, 3, 5, 500),
+  #       na.color = "#ffdeaf"
+  #     )
+  #     
+  #     # Map titles
+  #     # Concentration maps titles
+  #     # Soil concentration map title
+  #     soil_conc_title <- paste0(
+  #       acsubst_name[as], " ",
+  #       endday |> unique(),
+  #       "-day PEC soil after 1x application in ",
+  #       app_month,
+  #       " ",
+  #       "(",
+  #       sim_yr,
+  #       ")",
+  #       " in ",
+  #       lau_name[name]$LAU_NAME
+  #     )
+  #     
+  #     # RQ maps titles
+  #     # Soil RQ map title
+  #     soil_rq_title <- paste0(
+  #       acsubst_name[as], " ",
+  #       endday |> unique(),
+  #       "-day RQ<sub>earthworm</sub> soil after 1x application in ",
+  #       app_month,
+  #       " ",
+  #       "(",
+  #       sim_yr,
+  #       ")",
+  #       " in ",
+  #       lau_name[name]$LAU_NAME
+  #     )
+  #     
+  #     # AS concentration in topsoil
+  #     if (!pb$finished) pb$tick(tokens = list(map_type = "Creating Soil PEC map", substance = current_substance))
+  #     
+  #     soil_as_conc <- leaflet() |>
+  #       addTiles(options = tileOptions(opacity = 0.5)) |> 
+  #       
+  #       # Add district borders
+  #       addPolylines(
+  #         data = lau_name[name],
+  #         color = "black",
+  #         weight = 0.75,
+  #         opacity = 1,
+  #         fillOpacity = 0,
+  #         group = "Administrative borders"
+  #       ) |>
+  #       
+  #       # Add soil concentration polygons
+  #       addPolygons(
+  #         data = soil_data,
+  #         fillColor = ~soil_conc_pal(conc_acsubst_total_soil_56twa_ug.kg),
+  #         fillOpacity = 0.85,
+  #         color = "black",
+  #         weight = 0.25,
+  #         opacity = 1,
+  #         popup = ~paste0("<b>Field ID: </b>", "<b>", ZKOD, " (ZKOD)", ", ", CTVEREC, " (CTVEREC)", "</b>", "<br>",
+  #                         "<b>Crop: </b>", "<b>", Crop, "</b>", "<br>",
+  #                         "<b>Individual PEC soil (µg × kg⁻¹): </b>", "<b>",
+  #                         ifelse(is.na(conc_acsubst_total_soil_56twa_ug.kg), 
+  #                                "Missing values",
+  #                                format_power10(conc_acsubst_total_soil_56twa_ug.kg,  digits = 2)), "</b>"),
+  #         highlightOptions = highlightOptions(color = "black",
+  #                                             weight = 3,
+  #                                             bringToFront = TRUE),
+  #         group = "Individual fields"
+  #       ) |> 
+  #       
+  #       # Add layer controls
+  #       addLayersControl(
+  #         overlayGroups = c("Administrative borders", "Individual fields"),
+  #         options = layersControlOptions(collapsed = FALSE)
+  #       ) |>
+  #       
+  #       # Add legend
+  #       addLegend(
+  #         pal = soil_conc_pal_rev,
+  #         values = soil_data$conc_acsubst_total_soil_56twa_ug.kg,
+  #         title = "Individual PEC soil<br>(time-weighted) (µg × kg⁻¹)",
+  #         group = "Individual fields",
+  #         position = "bottomright",
+  #         opacity = 0.75,
+  #         na.label = "Missing values",
+  #         labFormat = function(type, cuts, p) {
+  #           n <- length(cuts)
+  #           cuts <- sort(cuts, decreasing = TRUE)
+  #           paste0(sapply(cuts[-1], format_power10, digits = 2), 
+  #                  " to ", 
+  #                  sapply(cuts[-n], format_power10, digits = 2))
+  #         }
+  #       ) |>
+  #       
+  #       # Add scale bar
+  #       addScaleBar(position = "bottomleft") |>
+  #       
+  #       # Add title using custom HTML control
+  #       addControl(html = paste0("<div style='padding: 8px 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); ",
+  #                                "font-size: 14px; font-weight: bold; max-width: calc(100vw - 350px); ",
+  #                                "width: fit-content; line-height: 1.5; word-wrap: break-word; z-index: 1000;'>",
+  #                                soil_conc_title, 
+  #                                "</div>"),
+  #                  position = "topleft") |> 
+  #       addControl(html = "", position = "bottomleft") %>%
+  #       htmlwidgets::onRender("
+  #   function(el, x) {
+  #     if (this._controlCorners) {
+  #       var existingZoom = this._controlCorners.topleft.querySelector('.leaflet-control-zoom');
+  #       if (existingZoom) {
+  #         existingZoom.remove();
+  #       }
+  #     }
+  #     
+  #     var zoomControl = L.control.zoom({
+  #       position: 'bottomleft'
+  #     });
+  #     zoomControl.addTo(this);
+  #     
+  #     var titleControl = document.querySelector('.leaflet-top.leaflet-left .leaflet-control');
+  #       if (titleControl) {
+  #         window.addEventListener('resize', function() {
+  #           var mapWidth = el.offsetWidth;
+  #           var maxWidth = Math.max(200, mapWidth - 350);
+  #           titleControl.style.maxWidth = maxWidth + 'px';
+  #         });
+  #       }
+  #   }
+  # ")
+  #     
+  #     saveWidget(soil_as_conc, file = paste0(dir_create(path_home_r(),
+  #                                                       "/Soil/PEC"),
+  #                                            "/", 
+  #                                            paste0(lau_name[name]$LAU_NAME,
+  #                                                   "_",
+  #                                                   acsubst_name[as],
+  #                                                   "_PEC_Soil_CZ.html")), selfcontained = T)
+  #     
+  #     # Soil RQ maps for individual AS
+  #     # Create the leaflet map
+  #     if (!pb$finished) pb$tick(tokens = list(map_type = "Creating Soil RQ map", substance = current_substance))
+  #     
+  #     soil_ind_rq_dist <- leaflet() |>
+  #       # Add OpenStreetMap tiles with transparency
+  #       addTiles(options = tileOptions(opacity = 0.5)) |> 
+  #       
+  #       # Add district borders
+  #       addPolylines(
+  #         data = lau_name[name],
+  #         color = "black",
+  #         weight = 0.75,
+  #         opacity = 1,
+  #         fillOpacity = 0,
+  #         group = "Administrative borders"
+  #       ) |>
+  #       
+  #       # Add soil RQ polygons
+  #       addPolygons(
+  #         data = soil_data,
+  #         fillColor = ~soil_rq_pal(rq_acsubst_total_soil_twa),
+  #         fillOpacity = 0.85,
+  #         color = "black",
+  #         weight = 0.25,
+  #         opacity = 1,
+  #         popup = ~paste0("<b>Field ID: </b>", "<b>", ZKOD, " (ZKOD)", ", ", CTVEREC, " (CTVEREC)", "</b>", "<br>",
+  #                         "<b>Crop: </b>", "<b>", Crop, "</b>", "<br>",
+  #                         "<b>Individual RQ soil: </b>", "<b>", 
+  #                         ifelse(is.na(rq_acsubst_total_soil_twa), 
+  #                                "Missing values", 
+  #                                format_power10(rq_acsubst_total_soil_twa, digits = 3)), "</b>"),
+  #         highlightOptions = highlightOptions(color = "black",
+  #                                             weight = 3,
+  #                                             bringToFront = TRUE),
+  #         group = "Individual fields"
+  #       ) |>
+  #       
+  #       # Add layer controls
+  #       addLayersControl(
+  #         overlayGroups = c("Administrative borders", "Individual fields"),
+  #         options = layersControlOptions(collapsed = FALSE)
+  #       ) |>
+  #       
+  #       # Add scale bar
+  #       addScaleBar(position = "bottomleft") |> 
+  #       
+  #       # Add custom legend
+  #       addLegend(
+  #         colors = soil_rq_colors,
+  #         labels = c("\u2265 5", "\u2265 4", "\u2265 3", "\u2265 2", "\u2265 1", "\u003c 1", "\u2265 0.2", "\u003c 0.2"),
+  #         title = "Individual RQ soil",
+  #         position = "bottomright",
+  #         group = "Individual fields",
+  #         opacity = 1
+  #       ) |> 
+  #       addControl(html = paste0("<div style='padding: 8px 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); ",
+  #                                "font-size: 14px; font-weight: bold; max-width: calc(100vw - 350px); ",
+  #                                "width: fit-content; line-height: 1.5; word-wrap: break-word; z-index: 1000;'>",
+  #                                soil_rq_title, 
+  #                                "</div>"),
+  #                  position = "topleft") |> 
+  #       addControl(html = "", position = "bottomleft") %>%
+  #       htmlwidgets::onRender("
+  #   function(el, x) {
+  #     if (this._controlCorners) {
+  #       var existingZoom = this._controlCorners.topleft.querySelector('.leaflet-control-zoom');
+  #       if (existingZoom) {
+  #         existingZoom.remove();
+  #       }
+  #     }
+  #     
+  #     var zoomControl = L.control.zoom({
+  #       position: 'bottomleft'
+  #     });
+  #     zoomControl.addTo(this);
+  #     
+  #    var titleControl = document.querySelector('.leaflet-top.leaflet-left .leaflet-control');
+  #       if (titleControl) {
+  #         window.addEventListener('resize', function() {
+  #           var mapWidth = el.offsetWidth;
+  #           var maxWidth = Math.max(200, mapWidth - 350);
+  #           titleControl.style.maxWidth = maxWidth + 'px';
+  #         });
+  #       }
+  #   }
+  # ")
+  #     
+  #     saveWidget(soil_ind_rq_dist, file = paste0(dir_create(path_home_r(),
+  #                                                           "/Soil/RQ"),
+  #                                                "/", 
+  #                                                paste0(lau_name[name]$LAU_NAME,
+  #                                                       "_",
+  #                                                       acsubst_name[as],
+  #                                                       "_RQ_Soil_CZ.html")), selfcontained = T)
+  #   }
     
-    # Water PEC and RQ individual maps 
-    for (as in seq_along(acsubst_name <- actual_river_acsubst_name)) {
+  # Water PEC and RQ individual maps 
+  for (as in seq_along(acsubst_name <- actual_river_acsubst_name)) {
       
       # Store current substance name for progress updates
       current_substance <- acsubst_name[as]
       
       # Prepare data
       # Prepare river water data
-      
+
       river_data <- terra::merge(rivers_lau_buff_seg[c("HYDROID",
                                                        "NAMN1",
                                                        "SHAPE_Leng")],
@@ -1980,17 +1981,16 @@ map_topsoil_riverwater_cz <- function(lau_name,
                                               river_weight[c("HYDROID", "NAMN1", "SHAPE_Leng", "river_w")] |> 
                                                 values(),
                                               by =  c("HYDROID", "NAMN1", "SHAPE_Leng")) |>
-                                   group_by(SHAPE_Leng, HYDROID, NAMN1) |> 
+                                   group_by(HYDROID, NAMN1, SHAPE_Leng) |> 
                                    arrange(desc(rq_mean_river_seg_twa), .by_group = T) |>
                                    mutate(nr_fields = n(),
-                                          rq_mean_river_seg_twa = round(sum(rq_mean_river_seg_twa*river_w), 4),
-                                          conc_mean_river_seg = mean(conc_mean_river_seg*river_w),
-                                          .groups = "keep") |> 
+                                          rq_mean_river_seg_twa = round(sum(rq_mean_river_seg_twa*river_w), 6),
+                                          conc_mean_river_seg = round(median(conc_mean_river_seg*river_w), 6)) |>
                                    distinct(acsubst, .keep_all = T) |>
                                    ungroup() |> 
                                    values(),
-                                 by = c("HYDROID", "NAMN1", "SHAPE_Leng"))
-      
+                                 by = c("HYDROID", "NAMN1", "SHAPE_Leng")) 
+
       river_net_lau <- river_net |> 
         mask(lau_name[name])
       
@@ -2307,7 +2307,8 @@ map_topsoil_riverwater_cz <- function(lau_name,
                                                          "_",
                                                          acsubst_name[as],
                                                          "_RQ_Water_CZ.html")), selfcontained = T)
-    }
+
+  }   
     
     # Cumulative RQ maps
     # Define color palette function
@@ -2532,7 +2533,7 @@ map_topsoil_riverwater_cz <- function(lau_name,
                         ifelse(is.na(sum_rq_mean_river_seg_twa), 
                                "Missing values",
                                format_power10(sum_rq_mean_river_seg_twa, digits = 3)), "</b><br>",
-                        "<b>Top contributors (RQ \u2265 0.001): </b>" ,"<br>", AS_rq),
+                        "<b>Top contributors (RQ \u2265 0.000001): </b>" ,"<br>", AS_rq),
         highlightOptions = highlightOptions(color = "black",
                                             weight = 3,
                                             bringToFront = TRUE),
@@ -2610,34 +2611,45 @@ map_topsoil_riverwater_cz <- function(lau_name,
                                                 lau_name[name]$LAU_NAME,
                                                 "_RQcum_Water_CZ.html"), selfcontained = T)  
     
-    write_excel_csv(river_seg_mapinput |> 
-                      select(HYDROID, 
-                             NAMN1,
-                             acsubst,
-                             conc_mean_river_seg) |> 
+    write_excel_csv(terra::merge(river_seg_mapinput,
+                                 river_weight[c("HYDROID", "NAMN1", "SHAPE_Leng", "river_w")] |> 
+                                   values(),
+                                 by =  c("HYDROID", "NAMN1", "SHAPE_Leng")) |>
                       values() |> 
+                      group_by(HYDROID, NAMN1, SHAPE_Leng) |> 
+                      mutate(nr_fields_buff = n(),
+                             conc_mean_river_seg  = conc_mean_river_seg  * river_w) |> 
+                      select(-c(rq_mean_river_seg_twa,
+                                NOEC_fish_21_mg.L,
+                                District)) |>
                       cbind(endday |>
-                              as.data.frame()) |> 
+                              as.data.frame()) |>
                       cbind(lau_name[name] |>
-                              as.data.frame()) |> 
+                              as.data.frame()) |>
                       rename(conc_river_ug.dm3 = conc_mean_river_seg,
+                             srunoff_as_load_kg = srunoff_as_load,
                              simtime_day = endday),
                     paste0(path_home_r(),
                            "/Water/PEC/",
                            lau_name[name]$LAU_NAME,
                            "_PEC_Water_CZ.csv"))
     
-    write_excel_csv(river_seg_mapinput |> 
-                      select(HYDROID, 
-                             NAMN1,
-                             acsubst,
-                             rq_mean_river_seg_twa) |> 
+    write_excel_csv(terra::merge(river_seg_mapinput,
+                                 river_weight[c("HYDROID", "NAMN1", "SHAPE_Leng", "river_w")] |> 
+                                   values(),
+                                 by =  c("HYDROID", "NAMN1", "SHAPE_Leng")) |>
                       values() |> 
+                      group_by(HYDROID, NAMN1, SHAPE_Leng) |> 
+                      mutate(nr_fields_buff = n(),
+                             rq_mean_river_seg_twa  = rq_mean_river_seg_twa  * river_w) |> 
+                      select(-c(conc_mean_river_seg,
+                                District)) |>
                       cbind(endday |>
-                              as.data.frame()) |> 
+                              as.data.frame()) |>
                       cbind(lau_name[name] |>
-                              as.data.frame()) |> 
-                      rename(simtime_day = endday),
+                              as.data.frame()) |>
+                      rename(simtime_day = endday,
+                             srunoff_as_load_kg = srunoff_as_load),
                     paste0(path_home_r(),
                            "/Water/RQ/",
                            lau_name[name]$LAU_NAME,
@@ -2653,7 +2665,7 @@ map_topsoil_riverwater_cz <- function(lau_name,
                     paste0(path_home_r(),
                            "/Water/RQ/",
                            lau_name[name]$LAU_NAME,
-                           "_RQcum_Water_CZ.csv")) 
+                           "_RQcum_Water_CZ.csv"))
     }
   }
   #################################################################
@@ -2669,4 +2681,3 @@ map_topsoil_riverwater_cz(lau_name = lau_name,
                          app_month = app_month,
                          endday = endday,
                          rivbuff_width = rivbuff_width)
-

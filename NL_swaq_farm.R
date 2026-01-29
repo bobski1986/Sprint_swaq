@@ -1426,7 +1426,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                  "sdrift_as_load",
                                                  "acsubst",
                                                  "LAU_NAME")] |>
-        # filter(acsubst %in% acsubst_soil) |> 
+        # filter(acsubst %in% acsubst_water) |> 
         terra::intersect(rivers_class_lau_buff[c("id", "length_m", "dis_m3_pyr")]) |>
         terra::merge(chemprop[c("Active", "NOEC_fish_21_mg.L")], by.x = "acsubst", by.y = "Active") |>
         mutate(conc_mean_river_seg = srunoff_as_load+sdrift_as_load/dis_m3_pyr,
@@ -1483,7 +1483,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                    values(),
                                  by =  c("id", "length_m")) |> 
         group_by(id, length_m) |>
-        summarise(sum_rq_mean_river_seg_twa = max(rq_mean_river_seg_twa * river_w), .groups = "keep") |> 
+        summarise(sum_rq_mean_river_seg_twa = sum(rq_mean_river_seg_twa), .groups = "keep") |> 
         ungroup() |>
         makeValid()
       
@@ -1505,7 +1505,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         river_cumRQ_all <- terra::merge(rivers_class_lau_buff[c("id", "length_m")],
                                         river_cumRQ_df,
                                         by = c("id", "length_m")) 
-        
+        river_cumRQ_all |> view()
         ####################################################################
         ########### END: Pesticide Runoff Model Schriever 2007 #############
         ####################################################################

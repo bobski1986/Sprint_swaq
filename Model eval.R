@@ -144,6 +144,8 @@ soil_mec_knuth <- read_excel(dir_ls(path_home_r(), regexp = "Knuth soil sampling
                names_to = "Active",
                values_to = "MEC_µg.kg") |> 
   filter(!is.na(MEC_µg.kg)) |> 
+  filter(Active %in% c("Fluazinam"))
+
   filter(Active %in% c("Acetamiprid", "Tebuconazole", "Glyphosate"))
 
 eval_data <- terra::merge(Knuth14 |> 
