@@ -16,7 +16,7 @@ lau_degurba_cz <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_
   vect() |> 
   tidyterra::filter(CNTR_CODE == "CZ")
 
-site_id_cz <- c("F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10", "F11", "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24")
+site_id_cz <- c("CZ_EF01_S_P", "CZ_EF02_S_P", "CZ_EF03_S_P", "CZ_EF04_S_P", "CZ_EF05_S_P", "CZ_EF06_S_P", "CZ_EF07_S_P", "CZ_EF08_S_P", "CZ_EF09_S_P", "CZ_EF10_S_P", "CZ_EF11_S_P", "CZ_EF12_S_P", "CZ_EF13_S_P", "CZ_EF14_S_P", "CZ_EF15_S_P", "CZ_EF16_S_P", "CZ_EF17_S_P", "CZ_EF18_S_P", "CZ_EF19_S_P", "CZ_EF20_S_P", "CZ_EF21_S_P", "CZ_EF22_S_P", "CZ_EF23_S_P", "CZ_EF24_S_P")
 site_id_lat_cz <- c(48.75428, 48.7651997, 49.5882283, 48.9971858, 48.8974494, 48.9203217, 49.5573031, 49.7089406, 49.7190786, 50.5149308, 50.5392117, 50.4087597, 49.0598786, 49.0573903, 50.1286728, 50.2487525, 50.22116, 49.7082947, 48.9869569, 49.6619561, 49.7321864, 48.8276081, 48.8326775, 48.7364833)
 site_id_lon_cz <- c(16.9401214, 16.9324394, 17.1860597, 16.9157722, 16.0395308, 15.9784944, 13.9029903, 14.8711725, 14.8851656, 16.196935, 16.1935875, 14.1494492, 15.4676047, 15.4676261, 16.2425311, 17.6263658, 15.9933244, 14.7895919, 17.0273617, 12.9795581, 12.9605036, 16.5171839, 16.4857483, 16.9331583)
 
@@ -105,7 +105,7 @@ sampling_sites_map <- function(lau, site_coord){
   
 }
 
-sampling_sites_map(lau_degurba_dk, site_coord_dk)
+sampling_sites_map(lau_degurba_cz, site_coord_cz)
 
 # Evaluation dataset
 
@@ -113,81 +113,84 @@ lau_sample_cz <- lau_degurba_cz |> filter(LAU_NAME %in% site_coord_cz$LAU_NAME) 
 lau_sample_nl <- lau_degurba_nl |> filter(LAU_NAME %in% site_coord_nl$LAU_NAME) |> distinct(LAU_NAME)
 lau_sample_dk <- lau_degurba_dk |> filter(LAU_NAME %in% site_coord_dk$LAU_NAME) |> distinct(LAU_NAME)
 
-gemup_cz <- dir_ls(path_home_r(), recurse = T, regexp = "gemup100") |> 
-  vect(extent = ext(lau_sample_cz[1])) |>
-  filter(Active %in% c("acetamiprid", "tebuconazole", "glyphosate")) |> 
-  filter(str_detect(Crop,  regex("rape"))) |> 
-  mutate(acsubst = Active |> str_to_title()) |> 
-  mask(lau_degurba_cz |> filter(LAU_NAME %in% lau_sample_cz$LAU_NAME))
+soil_pec_cz_path <- dir_ls(path_home_r(), regexp = "PEC_Soil_CZ.csv", recurse = T)[-1]
+soil_pec_cz <- map(soil_pec_cz_path, read_csv) |>
+  bind_rows() |> 
+  rename(Active = acsubst)|>
+  filter(str_detect(Crop, "rape"))
 
-gemup_nl <- dir_ls(path_home_r(), recurse = T, regexp = "gemap_slim_nl") |> 
-  vect(extent = ext(lau_sample_nl[1])) |> 
-  filter(EU_name %in% c("Acetamiprid", "Tebuconazole", "Glyphosate")) |> 
-  filter(str_detect(EC_hcat_n,  regex("pota"))) |> 
-  mutate(acsubst = EU_name) |> 
-  mask(lau_degurba_nl |> filter(LAU_NAME %in% lau_sample_nl$LAU_NAME))
+# gemup_cz <- dir_ls(path_home_r(), recurse = T, regexp = "gemup100") |> 
+#   vect(extent = ext(lau_sample_cz[1])) |>
+#   filter(Active %in% c("acetamiprid", "tebuconazole", "glyphosate")) |> 
+#   filter(str_detect(Crop,  regex("rape"))) |> 
+#   mutate(acsubst = Active |> str_to_title()) |> 
+#   mask(lau_degurba_cz |> filter(LAU_NAME %in% lau_sample_cz$LAU_NAME))
 
-gemup_dk <- dir_ls(path_home_r(), recurse = T, regexp = "gemap_3chem_dk") |> 
-  vect(extent = ext(lau_sample_dk[1])) |>
-  mutate(Active = case_when(
-    Active == "acetamiprid" ~ "Acetamiprid",
-    Active == "glyphosat" ~ "Glyphosate",
-    Active == "tebuconazol" ~ "Tebuconazole")) |> 
-filter(EC_trans_n %in% c("Winter wheat", "Spring barley", "Spring oats","Green grain of spring oats", "Winter rye", "Winter triticale", "Spring barley wholecrop", "Spring wheat")) |> 
-  mask(lau_degurba_dk |> filter(LAU_NAME %in% lau_sample_dk$LAU_NAME))
+# gemup_nl <- dir_ls(path_home_r(), recurse = T, regexp = "gemap_slim_nl") |> 
+#   vect(extent = ext(lau_sample_nl[1])) |> 
+#   filter(EU_name %in% c("Acetamiprid", "Tebuconazole", "Glyphosate")) |> 
+#   filter(str_detect(EC_hcat_n,  regex("pota"))) |> 
+#   mutate(acsubst = EU_name) |> 
+#   mask(lau_degurba_nl |> filter(LAU_NAME %in% lau_sample_nl$LAU_NAME))
+# 
+# gemup_dk <- dir_ls(path_home_r(), recurse = T, regexp = "gemap_3chem_dk") |> 
+#   vect(extent = ext(lau_sample_dk[1])) |>
+#   mutate(Active = case_when(
+#     Active == "acetamiprid" ~ "Acetamiprid",
+#     Active == "glyphosat" ~ "Glyphosate",
+#     Active == "tebuconazol" ~ "Tebuconazole")) |> 
+# filter(EC_trans_n %in% c("Winter wheat", "Spring barley", "Spring oats","Green grain of spring oats", "Winter rye", "Winter triticale", "Spring barley wholecrop", "Spring wheat")) |> 
+#   mask(lau_degurba_dk |> filter(LAU_NAME %in% lau_sample_dk$LAU_NAME))
 
 # Add PEC and MEC soil data collected by Vera and Knuth et al. 2024
-soil_mec_knuth <- read_excel(dir_ls(path_home_r(), regexp = "Knuth soil sampling", recurse = T), range = "A1:GO65") |> 
+soil_mec_cz <- read_excel(dir_ls(path_home_r(), regexp = "Knuth soil sampling", recurse = T), range = "A1:GO65") |> 
   mutate(across(6:197, ~as.numeric(.))) |> 
-  rename(Sample_code = `SPRINT Sample code`) |> 
+    rename(Sample_code = `SPRINT Sample code`) |> 
+  mutate(Sample_code = paste0(Sample_code, "_cz")) |> 
   pivot_longer(cols = -c(Sample_code, Country, Management, Region, Crop),
                names_to = "Active",
                values_to = "MEC_µg.kg") |> 
-  filter(!is.na(MEC_µg.kg)) |> 
-  filter(Active %in% c("Fluazinam"))
+  filter(!is.na(MEC_µg.kg) , Management == "Conventional", Country == "CZ") 
 
-  filter(Active %in% c("Acetamiprid", "Tebuconazole", "Glyphosate"))
-
-eval_data <- terra::merge(Knuth14 |> 
-                          load_acsubst_farm |>
-                            filter(Crop %in% c("Winter rape", "Spring rape")) |>
-                            select(LAU_NAME,
-                                   acsubst, 
-                                   aprate_farm_g.ha,
-                                   conc_acsubst_total_soil_ini_ug.kg,
-                                   conc_acsubst_total_soil_56twa_ug.kg),
-                          by = c("acsubst", "LAU_NAME"))
-
-eval_data_df <- eval_data |> group_by(LAU_NAME, acsubst) |> 
-  summarise(soil_conc_sample = max(PEC_ug.kg),
-            soil_conc_ini_med = mean(conc_acsubst_total_soil_ini_ug.kg),
+eval_data_pec <- soil_pec_cz |>
+  group_by(LAU_NAME, Active) |> 
+  summarise(soil_conc_ini_med = mean(conc_acsubst_total_soil_ini_ug.kg),
             soil_conc_ini_sd = sd(conc_acsubst_total_soil_ini_ug.kg),
             soil_conc_56d_med = mean(conc_acsubst_total_soil_56twa_ug.kg),
             soil_conc_56d_sd = sd(conc_acsubst_total_soil_56twa_ug.kg),
             nr_field = n()) |>
-  values() |> 
   bind_cols("Concentration units" = "µg × kg⁻¹") |> 
   rename("Location" = LAU_NAME,
-         "Active substance" = acsubst,
-         "Conentration sample" = soil_conc_sample,
+         "Active substance" = Active,
          "Concentration intial" = soil_conc_ini_med,
          "Concentration intial SD" = soil_conc_ini_sd,
          "Concentration 56 days" = soil_conc_56d_med,
          "Concentration 56 days SD" = soil_conc_56d_sd,
          "# of fields" = nr_field)
 
-write_excel_csv(eval_data_df, "soil concentration comparison.xlsx")
+eval_data_mec <- soil_mec_cz |>
+  group_by(LAU_NAME, Active, Sample_code) |> 
+  summarise(soil_conc_sample = max(MEC_µg.kg),
+            nr_samples = n()) |>
+  bind_cols("Concentration units" = "µg × kg⁻¹") |> 
+  rename("Concentration sample" = soil_conc_sample,
+         "Location" = LAU_NAME,
+         "Active substance" = Active,
+         "# of fields" = nr_samples)
 
+eval_data_df <- left_join(eval_data_pec, eval_data_mec, by = c("Active substance", "Location")) |> na.omit()
+write_excel_csv(eval_data_df, "CZ soil concentration comparison.csv")
+eval_data_df |> view()
 # Read the data
-soil_conc <- read.csv(dir_ls(path_home_r(), recurse = T, regexp = "soil concentration comparison.csv"))
-
+soil_conc <- read.csv(dir_ls(path_home_r(), recurse = T, regexp = "CZ soil concentration comparison.csv"))
+soil_conc |> names()
 # Prepare data for plotting
 soil_conc_long <- soil_conc %>%
   # Create location label with number of fields
-  mutate(Location_label = paste0(Location, "\n(n=", X..of.fields, ")")) %>%
+  mutate(Location_label = paste0(Location, "\n(n=", X..of.fields.x, ")")) %>%
   # Reshape data to long format
   pivot_longer(
-    cols = c(Conentration.sample, Concentration.intial, Concentration.56.days),
+    cols = c(Concentration.sample, Concentration.intial, Concentration.56.days),
     names_to = "Measurement_type",
     values_to = "Concentration"
   ) %>%
@@ -200,7 +203,7 @@ soil_conc_long <- soil_conc %>%
     ),
     # Clean up measurement type labels
     Measurement_type = case_when(
-      Measurement_type == "Conentration.sample" ~ "Sample (measured)",
+      Measurement_type == "Concentration.sample" ~ "Sample (measured)",
       Measurement_type == "Concentration.intial" ~ "Initial (modeled)",
       Measurement_type == "Concentration.56.days" ~ "56-day TWA (modeled)"
     )
