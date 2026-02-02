@@ -29,6 +29,8 @@ site_coord_cz <- cbind(tibble(
   vect() |>
   terra::intersect(lau_degurba_cz)
 
+lau_sample_cz <- lau_degurba_cz |> filter(LAU_NAME %in% site_coord_cz$LAU_NAME) |> distinct(LAU_NAME)
+
 # NL sampling site coordinates
 lau_degurba_nl <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_4326.gpkg") |>
   vect() |> 
@@ -46,6 +48,8 @@ lat = site_id_lat_nl)) |>
   sf::st_as_sf(coords = c("long", "lat"), crs = st_crs(lau_degurba_nl)) |>
   vect() |>
   terra::intersect(lau_degurba_nl)
+
+lau_sample_nl <- lau_degurba_nl |> filter(LAU_NAME %in% site_coord_nl$LAU_NAME) |> distinct(LAU_NAME)
 
 # DK sampling site coordinates
 lau_degurba_dk <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_4326.gpkg") |>
@@ -65,6 +69,9 @@ site_coord_dk <- cbind(tibble(
   vect() |>
   terra::intersect(lau_degurba_dk)
 
+lau_sample_dk <- lau_degurba_dk |> filter(LAU_NAME %in% site_coord_dk$LAU_NAME) |> distinct(LAU_NAME)
+
+# Sample site map
 sampling_sites_map <- function(lau, site_coord){
   
   tmap_mode("plot")
@@ -108,12 +115,7 @@ sampling_sites_map <- function(lau, site_coord){
 sampling_sites_map(lau_degurba_cz, site_coord_cz)
 
 # Evaluation dataset
-
-lau_sample_cz <- lau_degurba_cz |> filter(LAU_NAME %in% site_coord_cz$LAU_NAME) |> distinct(LAU_NAME)
-lau_sample_nl <- lau_degurba_nl |> filter(LAU_NAME %in% site_coord_nl$LAU_NAME) |> distinct(LAU_NAME)
-lau_sample_dk <- lau_degurba_dk |> filter(LAU_NAME %in% site_coord_dk$LAU_NAME) |> distinct(LAU_NAME)
-
-soil_pec_cz_path <- dir_ls(path_home_r(), regexp = "PEC_Soil_CZ.csv", recurse = T)[-1]
+soil_pec_cz_path <- dir_ls(path_home_r(), regexp = "PEC_Soil_CZ.csv", recurse = T)
 soil_pec_cz <- map(soil_pec_cz_path, read_csv) |>
   bind_rows() |> 
   rename(Active = acsubst)|>
@@ -150,7 +152,7 @@ soil_mec_cz <- read_excel(dir_ls(path_home_r(), regexp = "Knuth soil sampling", 
   pivot_longer(cols = -c(Sample_code, Country, Management, Region, Crop),
                names_to = "Active",
                values_to = "MEC_µg.kg") |> 
-  filter(!is.na(MEC_µg.kg) , Management == "Conventional", Country == "CZ") 
+  filter(!is.na(MEC_µg.kg), Country == "CZ") 
 
 eval_data_pec <- soil_pec_cz |>
   group_by(LAU_NAME, Active) |> 
@@ -169,23 +171,24 @@ eval_data_pec <- soil_pec_cz |>
          "# of fields" = nr_field)
 
 eval_data_mec <- soil_mec_cz |>
-  group_by(LAU_NAME, Active, Sample_code) |> 
+  left_join(site_coord_cz |> values(), by = join_by("Sample_code" == "site_id")) |> 
+  group_by(LAU_NAME, Active, Sample_code, Country, Management) |> 
   summarise(soil_conc_sample = max(MEC_µg.kg),
             nr_samples = n()) |>
   bind_cols("Concentration units" = "µg × kg⁻¹") |> 
-  rename("Concentration sample" = soil_conc_sample,
-         "Location" = LAU_NAME,
+  rename("Location" = LAU_NAME,
+         "Concentration sample" = soil_conc_sample,
          "Active substance" = Active,
          "# of fields" = nr_samples)
 
-eval_data_df <- left_join(eval_data_pec, eval_data_mec, by = c("Active substance", "Location")) |> na.omit()
+eval_data_df <- left_join(eval_data_pec, eval_data_mec, by = c("Active substance", "Location", "Concentration units")) |> na.omit()
 write_excel_csv(eval_data_df, "CZ soil concentration comparison.csv")
-eval_data_df |> view()
+
 # Read the data
 soil_conc <- read.csv(dir_ls(path_home_r(), recurse = T, regexp = "CZ soil concentration comparison.csv"))
-soil_conc |> names()
+
 # Prepare data for plotting
-soil_conc_long <- soil_conc %>%
+soil_conc_long_cz <- soil_conc %>%
   # Create location label with number of fields
   mutate(Location_label = paste0(Location, "\n(n=", X..of.fields.x, ")")) %>%
   # Reshape data to long format
@@ -217,154 +220,197 @@ soil_conc_long <- soil_conc %>%
     Location_label = factor(Location_label, 
                             levels = unique(Location_label[order(Location, Active.substance)]))
   )
+# BAR PLOT
 
-# Create a data frame for vertical lines (separating locations)
-# We need to add lines between each unique location
-unique_locations <- soil_conc_long %>%
-  distinct(Location_label, Active.substance) %>%
-  arrange(Location_label) %>%
-  group_by(Active.substance) %>%
-  mutate(location_num = row_number()) %>%
-  ungroup()
+as_soil_cz.plt <- function(soil_conc_long_cz, as, Location_label, Concentration, Measurement_type, Country){
+  
+  unique_locations <- soil_conc_long_cz %>%
+    filter(Active.substance == as) %>%
+    distinct(Location_label, Active.substance) %>%
+    arrange(Location_label) %>%
+    group_by(Active.substance) %>%
+    mutate(location_num = row_number()) %>%
+    ungroup()
+  
+  vline_data <- unique_locations %>%
+    group_by(Active.substance) %>%
+    filter(location_num < max(location_num)) %>%
+    mutate(xintercept = location_num + 0.5) %>%
+    ungroup()  
+    
+  p <- soil_conc_long_cz %>%
+    filter(Active.substance == as) %>%
+    ggplot(aes(x = Location_label, y = Concentration, fill = Measurement_type)) +
+    geom_bar(stat = "identity", position = position_dodge(width = 0.9), width = 0.8) +
+    geom_errorbar(aes(ymin = Concentration - SD, ymax = Concentration + SD),
+                  position = position_dodge(width = 0.9),
+                  width = 0.25,
+                  na.rm = TRUE) +
+    # Add vertical dashed lines
+    geom_vline(data = vline_data, 
+               aes(xintercept = xintercept), 
+               linetype = "dashed", 
+               color = "gray50", 
+               linewidth = 0.5) +
+    # facet_wrap(~ Active.substance, scales = "free_y", ncol = 1) +
+    scale_fill_manual(values = c("Sample (measured)" = "#E69F00", 
+                                 "Initial (modeled)" = "#56B4E9", 
+                                 "56-day TWA (modeled)" = "#009E73")) +
+    labs(
+      title = paste0(as, ": Comparison of Measured and Modeled Concentrations in Soil in ", Country),
+      subtitle = "Error bars represent standard deviation (SD) for modeled values",
+      x = "Location (n = number of fields growing oilseed rape)",
+      y = paste0("(\u00B5g\u00D7kg\u207B\u00B9)"),
+      fill = "Measurement Type"
+    ) +
+    theme_minimal() +
+    theme(
+      # Remove all grid lines
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      # Keep axis lines
+      axis.line = element_line(color = "black", linewidth = 0.5),
+      axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+      legend.position = "bottom",
+      legend.title = element_text(face = "bold"),
+      strip.text = element_text(face = "bold", size = 12),
+      strip.background = element_rect(fill = "lightgray", color = NA),
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 10, color = "gray40"),
+      panel.background = element_rect(fill = "white", color = NA),
+      plot.background = element_rect(fill = "white", color = NA)
+    )
+  
+  print(p)
+  
+}
 
-vline_data <- unique_locations %>%
-  group_by(Active.substance) %>%
-  filter(location_num < max(location_num)) %>%
-  mutate(xintercept = location_num + 0.5) %>%
-  ungroup()
+as_soil_unique_cz <- soil_conc_long_cz$Active.substance |> unique()
 
-# Create the plot
-p <- ggplot(soil_conc_long, 
-            aes(x = Location_label, y = Concentration, fill = Measurement_type)) +
-  geom_bar(stat = "identity", position = position_dodge(width = 0.9), width = 0.8) +
-  geom_errorbar(aes(ymin = Concentration - SD, ymax = Concentration + SD),
-                position = position_dodge(width = 0.9),
-                width = 0.25,
-                na.rm = TRUE) +
-  # Add vertical dashed lines to separate locations
-  geom_vline(data = vline_data, 
-             aes(xintercept = xintercept), 
-             linetype = "dashed", 
-             color = "gray50", 
-             linewidth = 0.5) +
-  facet_wrap(~ Active.substance, scales = "free_y", ncol = 1) +
-  scale_fill_manual(values = c("Sample (measured)" = "#E69F00", 
-                               "Initial (modeled)" = "#56B4E9", 
-                               "56-day TWA (modeled)" = "#009E73")) +
-  labs(
-    title = "Comparison of Measured and Modeled Pesticide Concentrations in Soil",
-    subtitle = "Error bars represent standard deviation (SD) for modeled values",
-    x = "Location (n = number of fields growing oilseed rape)",
-    y = paste0("Concentration \u00B5g\u00D7kg\u207B\u00B9"),
-    fill = "Measurement Type"
+as_soil_cz.plt(soil_conc_long_cz = soil_conc_long_cz,
+               as = as_soil_unique_cz[5],
+               Location_label = soil_conc_long_cz$Location_label,
+               Concentration = soil_conc_long_cz$Concentration,
+               Measurement_type = soil_conc_long_cz$Measurement_type,
+               Country = soil_conc_long_cz$Country)
+
+# Scatter Plots
+
+
+
+# 1. Read and Transform Data
+
+soil_conc <- read.csv(dir_ls(path_home_r(), recurse = T, regexp = "CZ soil concentration comparison.csv"))
+df <- soil_conc
+
+df_log <- df %>%
+  mutate(across(c(3:6, 12), log10))
+
+# 2. Calculate Global Standard Deviation of Residuals
+# Combine residuals from both initial and 56-day models
+res_initial <- df_log$Concentration.intial - df_log$Concentration.sample
+res_56days <- df_log$Concentration.56.days - df_log$Concentration.sample
+sd_log_resid <- sd(c(res_initial, res_56days), na.rm = TRUE)
+
+# 3. Reshape for Plotting
+plot_data <- df_log %>%
+  mutate(Location_Mgmt = paste0(Location, " (", Management, ")")) %>%
+  pivot_longer(
+    cols = c(Concentration.intial, Concentration.56.days),
+    names_to = "Model_Type",
+    values_to = "Modelled_Concentration"
+  ) %>%
+  mutate(Model_Type = recode(Model_Type,
+                             Concentration.intial = "Initial Concentration",
+                             Concentration.56.days = "56 Day Time Averaged"))
+
+# 4. Generate the Plot
+p <- ggplot(plot_data, aes(x = Concentration.sample, y = Modelled_Concentration)) +
+  # 1:1 Line (Dashed)
+  geom_abline(aes(slope = 1, intercept = 0, linetype = "1:1 Line"), color = "black") +
+  
+  # +/- 1 Standard Deviation Lines (Dash-Dot)
+  geom_abline(aes(slope = 1, intercept = sd_log_resid, linetype = "±1 SD"), color = "blue") +
+  geom_abline(aes(slope = 1, intercept = -sd_log_resid, linetype = "±1 SD"), color = "blue") +
+  
+  # +/- 1 Order of Magnitude Lines (Dotted)
+  geom_abline(aes(slope = 1, intercept = 1, linetype = "±1 Order of Mag"), color = "red") +
+  geom_abline(aes(slope = 1, intercept = -1, linetype = "±1 Order of Mag"), color = "red") +
+  
+  # Scatter Points
+  geom_point(aes(shape = Active.substance, color = Location_Mgmt), 
+             size = 3.5, alpha = 0.8) +
+  
+  # Paneling and Scales
+  facet_wrap(~Model_Type) +
+  scale_linetype_manual(
+    name = "Reference Lines",
+    values = c("1:1 Line" = "dashed", "±1 SD" = "dotdash", "±1 Order of Mag" = "dotted")
   ) +
-  theme_minimal() +
-  theme(
-    # Remove all grid lines
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    # Keep axis lines
-    axis.line = element_line(color = "black", linewidth = 0.5),
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
-    legend.position = "bottom",
-    legend.title = element_text(face = "bold"),
-    strip.text = element_text(face = "bold", size = 12),
-    strip.background = element_rect(fill = "lightgray", color = NA),
-    plot.title = element_text(face = "bold", size = 14),
-    plot.subtitle = element_text(size = 10, color = "gray40"),
-    panel.background = element_rect(fill = "white", color = NA),
-    plot.background = element_rect(fill = "white", color = NA)
-  )
+  scale_shape_manual(values = c(15, 16, 17, 18, 3, 4, 8, 9, 10)) +
+  
+  labs(
+    x = expression(log[10] * "(Measured Concentration)"),
+    y = expression(log[10] * "(Modelled Concentration)"),
+    color = "Location (Management)",
+    shape = "Active Substance"
+  ) +
+  theme_bw() +
+  theme(legend.box = "vertical")
 
-# Display the plot
 print(p)
 
-p_glyphosate <- soil_conc_long %>%
-  filter(Active.substance == "Glyphosate") %>%
-  ggplot(aes(x = Location_label, y = Concentration, fill = Measurement_type)) +
-  geom_bar(stat = "identity", position = position_dodge(width = 0.9), width = 0.8) +
-  geom_errorbar(aes(ymin = Concentration - SD, ymax = Concentration + SD),
-                position = position_dodge(width = 0.9),
-                width = 0.25,
-                na.rm = TRUE) +
-  # Add vertical dashed lines
-  geom_vline(data = vline_data %>% filter(Active.substance == "Glyphosate"), 
-             aes(xintercept = xintercept), 
-             linetype = "dashed", 
-             color = "gray50", 
-             linewidth = 0.5) +
-  scale_fill_manual(values = c("Sample (measured)" = "#E69F00", 
-                               "Initial (modeled)" = "#56B4E9", 
-                               "56-day TWA (modeled)" = "#009E73")) +
-  labs(
-    title = "Glyphosate: Comparison of Measured and Modeled Concentrations in Soil",
-    subtitle = "Error bars represent standard deviation (SD) for modeled values",
-    x = "Location (n = number of fields growing oilseed rape)",
-    y = paste0("(\u00B5g\u00D7kg\u207B\u00B9)"),
-    fill = "Measurement Type"
-  ) +
-  theme_minimal() +
-  theme(
-    # Remove all grid lines
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    # Keep axis lines
-    axis.line = element_line(color = "black", linewidth = 0.5),
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
-    legend.position = "bottom",
-    legend.title = element_text(face = "bold"),
-    strip.text = element_text(face = "bold", size = 12),
-    strip.background = element_rect(fill = "lightgray", color = NA),
-    plot.title = element_text(face = "bold", size = 14),
-    plot.subtitle = element_text(size = 10, color = "gray40"),
-    panel.background = element_rect(fill = "white", color = NA),
-    plot.background = element_rect(fill = "white", color = NA)
-  )
+# Alternative faceted plots
+# Create a data frame for vertical lines (separating locations)
+# We need to add lines between each unique location
 
-p_tebuconazole <- soil_conc_long %>%
-  filter(Active.substance == "Tebuconazole") %>%
-  ggplot(aes(x = Location_label, y = Concentration, fill = Measurement_type)) +
-  geom_bar(stat = "identity", position = position_dodge(width = 0.9), width = 0.8) +
-  geom_errorbar(aes(ymin = Concentration - SD, ymax = Concentration + SD),
-                position = position_dodge(width = 0.9),
-                width = 0.25,
-                na.rm = TRUE) +
-  # Add vertical dashed lines
-  geom_vline(data = vline_data %>% filter(Active.substance == "Tebuconazole"), 
-             aes(xintercept = xintercept), 
-             linetype = "dashed", 
-             color = "gray50", 
-             linewidth = 0.5) +
-  scale_fill_manual(values = c("Sample (measured)" = "#E69F00", 
-                               "Initial (modeled)" = "#56B4E9", 
-                               "56-day TWA (modeled)" = "#009E73")) +
-  labs(
-    title = "Tebuconazole: Comparison of Measured and Modeled Concentrations in Soil",
-    subtitle = "Error bars represent standard deviation (SD) for modeled values",
-    x = "Location (n = number of fields growing oilseed rape)",
-    y = paste0("(\u00B5g\u00D7kg\u207B\u00B9)"),
-    fill = "Measurement Type"
-  ) +
-  theme_minimal() +
-  theme(
-    # Remove all grid lines
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    # Keep axis lines
-    axis.line = element_line(color = "black", linewidth = 0.5),
-    axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
-    legend.position = "bottom",
-    legend.title = element_text(face = "bold"),
-    strip.text = element_text(face = "bold", size = 12),
-    strip.background = element_rect(fill = "lightgray", color = NA),
-    plot.title = element_text(face = "bold", size = 14),
-    plot.subtitle = element_text(size = 10, color = "gray40"),
-    panel.background = element_rect(fill = "white", color = NA),
-    plot.background = element_rect(fill = "white", color = NA)
-  )
+# Create the plot
+# p <- ggplot(soil_conc_long, 
+#             aes(x = Location_label, y = Concentration, fill = Measurement_type)) +
+#   geom_bar(stat = "identity", position = position_dodge(width = 0.9), width = 0.8) +
+#   geom_errorbar(aes(ymin = Concentration - SD, ymax = Concentration + SD),
+#                 position = position_dodge(width = 0.9),
+#                 width = 0.25,
+#                 na.rm = TRUE) +
+# Add vertical dashed lines to separate locations
+# geom_vline(data = vline_data, 
+#            aes(xintercept = xintercept), 
+#            linetype = "dashed", 
+#            color = "gray50", 
+#            linewidth = 0.5) +
+# facet_wrap(~ Active.substance, scales = "free_y", ncol = 1) +
+# scale_fill_manual(values = c("Sample (measured)" = "#E69F00", 
+#                              "Initial (modeled)" = "#56B4E9", 
+#                              "56-day TWA (modeled)" = "#009E73")) +
+# labs(
+#   title = "Comparison of Measured and Modeled Pesticide Concentrations in Soil",
+#   subtitle = "Error bars represent standard deviation (SD) for modeled values",
+#   x = "Location (n = number of fields growing oilseed rape)",
+#   y = paste0("Concentration \u00B5g\u00D7kg\u207B\u00B9"),
+#   fill = "Measurement Type"
+# ) +
+# theme_minimal() +
+# theme(
+#   # Remove all grid lines
+#   panel.grid.major = element_blank(),
+#   panel.grid.minor = element_blank(),
+#   # Keep axis lines
+#   axis.line = element_line(color = "black", linewidth = 0.5),
+#   axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
+#   legend.position = "bottom",
+#   legend.title = element_text(face = "bold"),
+#   strip.text = element_text(face = "bold", size = 12),
+#   strip.background = element_rect(fill = "lightgray", color = NA),
+#   plot.title = element_text(face = "bold", size = 14),
+#   plot.subtitle = element_text(size = 10, color = "gray40"),
+#   panel.background = element_rect(fill = "white", color = NA),
+#   plot.background = element_rect(fill = "white", color = NA)
+# )
 
+# Display the plot
+# print(p)
 
-# PLOTS
+# OLD PLOTS
 crop_soilconc_plt <- function(as) {
   
   pec30_soil <-  dir_ls(path_home_r(), recurse = T, regexp = "gemup3chem_allcrop_2distr.gpkg") |> 
