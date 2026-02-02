@@ -126,7 +126,7 @@ acsubst_name <- c("aclonifen",
                   "esfenvalerate",
                   "ethofumesate",
                   "fenpropidin",
-                  # "fluazinam",
+                  "fluazinam",
                   "fludioxonil",
                   "fluopyram",
                   "glyphosate",
@@ -1505,7 +1505,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         river_cumRQ_all <- terra::merge(rivers_class_lau_buff[c("id", "length_m")],
                                         river_cumRQ_df,
                                         by = c("id", "length_m")) 
-        river_cumRQ_all |> view()
+        
         ####################################################################
         ########### END: Pesticide Runoff Model Schriever 2007 #############
         ####################################################################
