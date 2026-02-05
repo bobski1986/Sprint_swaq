@@ -158,7 +158,7 @@ acsubst_name <- c("benzovindiflupyr",
 # acsubst_name[which(!acsubst_name %in% ASs)]
 
 # Spatial extent #
-lau_name <- lau_sample_nl[5]
+lau_name <- lau_sample_nl
 
 # Year of simulation #
 # Remains unchanged
@@ -179,7 +179,7 @@ endday <- 56
 
 # Buffer area around rivers #
 # Can be changed
-rivbuff_width <- 100
+rivbuff_width <- 20
 
 # Main function for simulating and visualising ASs concentration in topsoil on individual fields and in river segments #
 # Run it only once to create "function object"
@@ -1213,7 +1213,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                    # weights = T,
                                    # exact = T,
                                    as.polygons = T) |>
-        rename("orcarb_perc" = "oc_perc") |>
+        rename("orcarb_perc" = "oc_jrc_NL") |>
         mutate(orcarb_perc = orcarb_perc/100)
       
       # srunoff_river_seg <- terra::zonal(srunoff_basin,
