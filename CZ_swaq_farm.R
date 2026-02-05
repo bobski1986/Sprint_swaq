@@ -610,8 +610,8 @@ map_topsoil_riverwater_cz <- function(lau_name,
                                                  y = crop_acsubst_area_lau.ha,
                                                  z = apfreq),
                                             \(x,y,z) ((x/y)/z)/1000)) |> 
-        ##Soil chronic RQ
-        mutate(rq_acsubst_total_soil_twa = conc_acsubst_total_soil_56twa_ug.kg/(NOEC_earthworm_chron_repr_mg.kg*1000)) |> 
+        ## Soil chronic RQ
+        mutate(rq_acsubst_total_soil_twa = conc_acsubst_total_soil_56twa_ug.kg/NOEC_earthworm_chron_repr_mg.kg) |> 
         ## Fraction of daily generated surface runoff. Mean, min, max are calculated over meteorological station within the basins
         ## Add code to match rainfall to AS application period for a given crop!!!!
         mutate(srunoff_month_sandy.mm = map_dbl(prec_month_mm,
@@ -754,8 +754,6 @@ map_topsoil_riverwater_cz <- function(lau_name,
           return(format_single(x))
         }
       }
-      
-
       
       actual_soil_acsubst_name <- soil_farm_mapinput$acsubst |> unique()
       
@@ -1356,7 +1354,7 @@ map_topsoil_riverwater_cz <- function(lau_name,
                                                z = apfreq),
                                           \(x,y,z) ((x/y)/z)/1000)) |> 
       ##Soil chronic RQ
-      mutate(rq_acsubst_total_soil_twa = conc_acsubst_total_soil_56twa_ug.kg/(NOEC_earthworm_chron_repr_mg.kg*1000)) |> 
+      mutate(rq_acsubst_total_soil_twa = conc_acsubst_total_soil_56twa_ug.kg/NOEC_earthworm_chron_repr_mg.kg) |> 
       ## Fraction of daily generated surface runoff. Mean, min, max are calculated over meteorological station within the basins
       ## Add code to match rainfall to AS application period for a given crop!!!!
       mutate(srunoff_month_sandy.mm = map_dbl(prec_month_mm,
@@ -1455,7 +1453,7 @@ map_topsoil_riverwater_cz <- function(lau_name,
       terra::merge(chemprop[c("Active", "NOEC_fish_21_mg.L")], by.x = "acsubst", by.y = "Active") |>
       group_by(HYDROID, NAMN1, SHAPE_Leng, Crop) |>
       mutate(conc_mean_river_seg = srunoff_as_load/dis_m3_pyr,
-             rq_mean_river_seg_twa = conc_mean_river_seg/(NOEC_fish_21_mg.L*1000)) |> 
+             rq_mean_river_seg_twa = conc_mean_river_seg/NOEC_fish_21_mg.L) |> 
       mask(gemup_lau)
     
     farm_area_buff <- terra::merge(rivers_lau_buff_seg,
@@ -1602,7 +1600,6 @@ map_topsoil_riverwater_cz <- function(lau_name,
       width = 100
     )
     
-
   # Soil PEC and RQ individual maps 
     
     for (as in seq_along(as_soil <- actual_soil_acsubst_name)) {

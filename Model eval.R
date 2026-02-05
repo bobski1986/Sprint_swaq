@@ -5,17 +5,33 @@ library(terra)
 library(tmap)
 library(readxl)
 
+
 #########################################################
 ########### START: Model results evaluation #############
 #########################################################
-
-# Sampling coordinates needed for model evaluation. It can be also used to select LAUs where sampling took place #
 
 # CZ sampling site coordinates
 lau_degurba_cz <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_4326.gpkg") |>
   vect() |> 
   tidyterra::filter(CNTR_CODE == "CZ")
 
+# Add PEC and MEC soil data collected by Vera and Knuth et al. 2024
+soil_mec_cz <- read_excel(dir_ls(path_home_r(), regexp = "Knuth soil sampling", recurse = T), range = "A1:GO65") |> 
+  mutate(across(6:197, ~as.numeric(.))) |> 
+  rename(Sample_code = `SPRINT Sample code`) |> 
+  pivot_longer(cols = -c(Sample_code, Country, Management, Region, Crop),
+               names_to = "Active",
+               values_to = "MEC_µg.kg") |> 
+  filter(!is.na(MEC_µg.kg), Country == "CZ") 
+
+# Evaluation dataset
+soil_pec_cz_path <- dir_ls(path_home_r(), regexp = "PEC_Soil_CZ.csv", recurse = T)
+soil_pec_cz <- map(soil_pec_cz_path, read_csv) |>
+  bind_rows() |>
+  rename(Active = acsubst)|>
+  filter(str_detect(Crop, "rape"))
+
+# Sampling coordinates needed for model evaluation. It can be also used to select LAUs where sampling took place #
 site_id_cz <- c("CZ_EF01_S_P", "CZ_EF02_S_P", "CZ_EF03_S_P", "CZ_EF04_S_P", "CZ_EF05_S_P", "CZ_EF06_S_P", "CZ_EF07_S_P", "CZ_EF08_S_P", "CZ_EF09_S_P", "CZ_EF10_S_P", "CZ_EF11_S_P", "CZ_EF12_S_P", "CZ_EF13_S_P", "CZ_EF14_S_P", "CZ_EF15_S_P", "CZ_EF16_S_P", "CZ_EF17_S_P", "CZ_EF18_S_P", "CZ_EF19_S_P", "CZ_EF20_S_P", "CZ_EF21_S_P", "CZ_EF22_S_P", "CZ_EF23_S_P", "CZ_EF24_S_P")
 site_id_lat_cz <- c(48.75428, 48.7651997, 49.5882283, 48.9971858, 48.8974494, 48.9203217, 49.5573031, 49.7089406, 49.7190786, 50.5149308, 50.5392117, 50.4087597, 49.0598786, 49.0573903, 50.1286728, 50.2487525, 50.22116, 49.7082947, 48.9869569, 49.6619561, 49.7321864, 48.8276081, 48.8326775, 48.7364833)
 site_id_lon_cz <- c(16.9401214, 16.9324394, 17.1860597, 16.9157722, 16.0395308, 15.9784944, 13.9029903, 14.8711725, 14.8851656, 16.196935, 16.1935875, 14.1494492, 15.4676047, 15.4676261, 16.2425311, 17.6263658, 15.9933244, 14.7895919, 17.0273617, 12.9795581, 12.9605036, 16.5171839, 16.4857483, 16.9331583)
@@ -24,19 +40,63 @@ site_coord_cz <- cbind(tibble(
   site_id = site_id_cz,
   long = site_id_lon_cz,
   lat = site_id_lat_cz)) |>
-  mutate(site_id = paste0(site_id, "_cz")) |> 
   sf::st_as_sf(coords = c("long", "lat"), crs = st_crs(lau_degurba_cz)) |>
   vect() |>
   terra::intersect(lau_degurba_cz)
 
 lau_sample_cz <- lau_degurba_cz |> filter(LAU_NAME %in% site_coord_cz$LAU_NAME) |> distinct(LAU_NAME)
 
+eval_data_pec <- soil_pec_cz |>
+  group_by(LAU_NAME, Active) |> 
+  summarise(soil_conc_ini_med = mean(conc_acsubst_total_soil_ini_ug.kg),
+            soil_conc_ini_sd = sd(conc_acsubst_total_soil_ini_ug.kg),
+            soil_conc_56d_med = mean(conc_acsubst_total_soil_56twa_ug.kg),
+            soil_conc_56d_sd = sd(conc_acsubst_total_soil_56twa_ug.kg),
+            nr_field = n()) |>
+  bind_cols("Concentration units" = "µg × kg⁻¹") |> 
+  rename("Location" = LAU_NAME,
+         "Active substance" = Active,
+         "Concentration intial" = soil_conc_ini_med,
+         "Concentration intial SD" = soil_conc_ini_sd,
+         "Concentration 56 days" = soil_conc_56d_med,
+         "Concentration 56 days SD" = soil_conc_56d_sd,
+         "# of fields" = nr_field)
+
+eval_data_mec <- soil_mec_cz |>
+  left_join(site_coord_cz |> values(), by = join_by("Sample_code" == "site_id")) |> 
+  group_by(LAU_NAME, Active, Sample_code, Country, Management) |> 
+  summarise(soil_conc_sample = max(MEC_µg.kg),
+            nr_samples = n()) |>
+  bind_cols("Concentration units" = "µg × kg⁻¹") |> 
+  rename("Location" = LAU_NAME,
+         "Concentration sample" = soil_conc_sample,
+         "Active substance" = Active,
+         "# of fields" = nr_samples)
+
+
 # NL sampling site coordinates
 lau_degurba_nl <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_4326.gpkg") |>
   vect() |> 
   tidyterra::filter(CNTR_CODE == "NL")
 
-site_id_nl <- c("F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10", "F11", "F12", "F13", "F14", "F15", "F16")
+# Add PEC and MEC soil data collected by Vera and Knuth et al. 2024
+soil_mec_nl <- read_excel(dir_ls(path_home_r(), regexp = "Knuth soil sampling", recurse = T), range = "A1:GO65") |> 
+  mutate(across(6:197, ~as.numeric(.))) |> 
+  rename(Sample_code = `SPRINT Sample code`) |> 
+  pivot_longer(cols = -c(Sample_code, Country, Management, Region, Crop),
+               names_to = "Active",
+               values_to = "MEC_µg.kg") |> 
+  filter(!is.na(MEC_µg.kg), Country == "NL")
+
+# Evaluation dataset
+soil_pec_nl_path <- dir_ls(path_home_r(), regexp = "PEC_Soil_NL.csv", recurse = T)
+soil_pec_nl <- map(soil_pec_nl_path, read_csv) |>
+  bind_rows() |>
+  rename(Active = acsubst) |> 
+  filter(str_detect(Crop, "Potat"))
+
+# Sampling coordinates needed for model evaluation. It can be also used to select LAUs where sampling took place #
+site_id_nl <- c("NL_EF01_S_P", "NL_EF02_S_P", "NL_EF03_S_P", "NL_EF04_S_P", "NL_EF05_S_P", "NL_EF06_S_P", "NL_EF07_S_P", "NL_EF08_S_P", "NL_EF09_S_P", "NL_EF10_S_P", "NL_EF11_S_P", "NL_EF12_S_P", "NL_EF13_S_P", "NL_EF14_S_P", "NL_EF15_S_P", "NL_EF16_S_P")
 site_id_lat_nl <- c(53.31, 53.32, 53.39, 53.38, 53.22, 53.4, 53.36, 53.39, 53.33, 53.28, 53.42, 53.35, 53.43, 53.38, 53.19, 53.32)
 site_id_lon_nl <- c(6.27, 6.13, 6.37, 6.33, 5.47, 6.42, 6.41, 6.03, 6.32, 6.26, 6.6, 6.46, 6.63, 6.34, 5.46, 6.33)
 
@@ -44,18 +104,48 @@ site_coord_nl <- cbind(tibble(
 site_id = site_id_nl,
 long = site_id_lon_nl,
 lat = site_id_lat_nl)) |> 
-  mutate(site_id = paste0(site_id, "_nl")) |> 
   sf::st_as_sf(coords = c("long", "lat"), crs = st_crs(lau_degurba_nl)) |>
   vect() |>
   terra::intersect(lau_degurba_nl)
 
 lau_sample_nl <- lau_degurba_nl |> filter(LAU_NAME %in% site_coord_nl$LAU_NAME) |> distinct(LAU_NAME)
 
+eval_data_pec_nl <- soil_pec_nl |>
+  group_by(LAU_NAME, Active) |> 
+  summarise(soil_conc_ini_med = mean(conc_acsubst_total_soil_ini_ug.kg),
+            soil_conc_ini_sd = sd(conc_acsubst_total_soil_ini_ug.kg),
+            soil_conc_56d_med = mean(conc_acsubst_total_soil_56twa_ug.kg),
+            soil_conc_56d_sd = sd(conc_acsubst_total_soil_56twa_ug.kg),
+            nr_field = n()) |>
+  bind_cols("Concentration units" = "µg × kg⁻¹") |> 
+  rename("Location" = LAU_NAME,
+         "Active substance" = Active,
+         "Concentration intial" = soil_conc_ini_med,
+         "Concentration intial SD" = soil_conc_ini_sd,
+         "Concentration 56 days" = soil_conc_56d_med,
+         "Concentration 56 days SD" = soil_conc_56d_sd,
+         "# of fields" = nr_field)
+
+eval_data_mec_nl <- soil_mec_nl |>
+  left_join(site_coord_nl |> values(), by = join_by("Sample_code" == "site_id")) |> 
+  group_by(LAU_NAME, Active, Sample_code, Country, Management) |> 
+  summarise(soil_conc_sample = max(MEC_µg.kg),
+            nr_samples = n()) |>
+  bind_cols("Concentration units" = "µg × kg⁻¹") |> 
+  rename("Location" = LAU_NAME,
+         "Concentration sample" = soil_conc_sample,
+         "Active substance" = Active,
+         "# of fields" = nr_samples)
+
+eval_data_df_nl <- left_join(eval_data_pec_nl, eval_data_mec_nl, by = c("Active substance", "Location", "Concentration units")) |> na.omit()
+write_excel_csv(eval_data_df_nl, "NL soil concentration comparison.csv")
+
 # DK sampling site coordinates
 lau_degurba_dk <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_4326.gpkg") |>
   vect() |> 
   filter(CNTR_CODE == "DK")
 
+# Sampling coordinates needed for model evaluation. It can be also used to select LAUs where sampling took place #
 site_id_dk <- c("F01", "F02", "F03", "F04", "F05", "F06", "F07", "F08", "F09", "F10", "F11", "F12", "F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20")
 site_id_lat_dk <- c(57, 57, 56.5, 56.51, 56.43, 56.44, 56.95, 56.97, 56.57, 56.57, 56.34, 56.35, 56.81, 56.81, 56.2, 56.23, 56.75, 56.78, 56.53,56.53)
 site_id_lon_dk <- c(8.75, 8.73, 8.17, 8.28, 8.98, 8.94, 10.12, 10.16, 8.21, 8.19, 10.35, 10.37, 9.35, 9.35, 9.39, 9.4, 9.96, 9.89, 8.19, 8.21)
@@ -114,12 +204,6 @@ sampling_sites_map <- function(lau, site_coord){
 
 sampling_sites_map(lau_degurba_cz, site_coord_cz)
 
-# Evaluation dataset
-soil_pec_cz_path <- dir_ls(path_home_r(), regexp = "PEC_Soil_CZ.csv", recurse = T)
-soil_pec_cz <- map(soil_pec_cz_path, read_csv) |>
-  bind_rows() |> 
-  rename(Active = acsubst)|>
-  filter(str_detect(Crop, "rape"))
 
 # gemup_cz <- dir_ls(path_home_r(), recurse = T, regexp = "gemup100") |> 
 #   vect(extent = ext(lau_sample_cz[1])) |>
@@ -144,51 +228,11 @@ soil_pec_cz <- map(soil_pec_cz_path, read_csv) |>
 # filter(EC_trans_n %in% c("Winter wheat", "Spring barley", "Spring oats","Green grain of spring oats", "Winter rye", "Winter triticale", "Spring barley wholecrop", "Spring wheat")) |> 
 #   mask(lau_degurba_dk |> filter(LAU_NAME %in% lau_sample_dk$LAU_NAME))
 
-# Add PEC and MEC soil data collected by Vera and Knuth et al. 2024
-soil_mec_cz <- read_excel(dir_ls(path_home_r(), regexp = "Knuth soil sampling", recurse = T), range = "A1:GO65") |> 
-  mutate(across(6:197, ~as.numeric(.))) |> 
-    rename(Sample_code = `SPRINT Sample code`) |> 
-  mutate(Sample_code = paste0(Sample_code, "_cz")) |> 
-  pivot_longer(cols = -c(Sample_code, Country, Management, Region, Crop),
-               names_to = "Active",
-               values_to = "MEC_µg.kg") |> 
-  filter(!is.na(MEC_µg.kg), Country == "CZ") 
-
-eval_data_pec <- soil_pec_cz |>
-  group_by(LAU_NAME, Active) |> 
-  summarise(soil_conc_ini_med = mean(conc_acsubst_total_soil_ini_ug.kg),
-            soil_conc_ini_sd = sd(conc_acsubst_total_soil_ini_ug.kg),
-            soil_conc_56d_med = mean(conc_acsubst_total_soil_56twa_ug.kg),
-            soil_conc_56d_sd = sd(conc_acsubst_total_soil_56twa_ug.kg),
-            nr_field = n()) |>
-  bind_cols("Concentration units" = "µg × kg⁻¹") |> 
-  rename("Location" = LAU_NAME,
-         "Active substance" = Active,
-         "Concentration intial" = soil_conc_ini_med,
-         "Concentration intial SD" = soil_conc_ini_sd,
-         "Concentration 56 days" = soil_conc_56d_med,
-         "Concentration 56 days SD" = soil_conc_56d_sd,
-         "# of fields" = nr_field)
-
-eval_data_mec <- soil_mec_cz |>
-  left_join(site_coord_cz |> values(), by = join_by("Sample_code" == "site_id")) |> 
-  group_by(LAU_NAME, Active, Sample_code, Country, Management) |> 
-  summarise(soil_conc_sample = max(MEC_µg.kg),
-            nr_samples = n()) |>
-  bind_cols("Concentration units" = "µg × kg⁻¹") |> 
-  rename("Location" = LAU_NAME,
-         "Concentration sample" = soil_conc_sample,
-         "Active substance" = Active,
-         "# of fields" = nr_samples)
-
-eval_data_df <- left_join(eval_data_pec, eval_data_mec, by = c("Active substance", "Location", "Concentration units")) |> na.omit()
-write_excel_csv(eval_data_df, "CZ soil concentration comparison.csv")
-
 # Read the data
-soil_conc <- read.csv(dir_ls(path_home_r(), recurse = T, regexp = "CZ soil concentration comparison.csv"))
+soil_conc <- dir_ls(path_home_r(), recurse = T, regexp = "NL soil concentration comparison.csv") |> read_csv()
 
 # Prepare data for plotting
-soil_conc_long_cz <- soil_conc %>%
+soil_conc_long <- soil_conc %>%
   # Create location label with number of fields
   mutate(Location_label = paste0(Location, "\n(n=", X..of.fields.x, ")")) %>%
   # Reshape data to long format
@@ -220,11 +264,12 @@ soil_conc_long_cz <- soil_conc %>%
     Location_label = factor(Location_label, 
                             levels = unique(Location_label[order(Location, Active.substance)]))
   )
-# BAR PLOT
 
-as_soil_cz.plt <- function(soil_conc_long_cz, as, Location_label, Concentration, Measurement_type, Country){
+
+# BAR PLOT
+as_soil.plt <- function(soil_conc_long, as, Location_label, Concentration, Measurement_type, Country){
   
-  unique_locations <- soil_conc_long_cz %>%
+  unique_locations <- soil_conc_long %>%
     filter(Active.substance == as) %>%
     distinct(Location_label, Active.substance) %>%
     arrange(Location_label) %>%
@@ -238,7 +283,7 @@ as_soil_cz.plt <- function(soil_conc_long_cz, as, Location_label, Concentration,
     mutate(xintercept = location_num + 0.5) %>%
     ungroup()  
     
-  p <- soil_conc_long_cz %>%
+  p <- soil_conc_long %>%
     filter(Active.substance == as) %>%
     ggplot(aes(x = Location_label, y = Concentration, fill = Measurement_type)) +
     geom_bar(stat = "identity", position = position_dodge(width = 0.9), width = 0.8) +
@@ -285,80 +330,283 @@ as_soil_cz.plt <- function(soil_conc_long_cz, as, Location_label, Concentration,
   
 }
 
-as_soil_unique_cz <- soil_conc_long_cz$Active.substance |> unique()
-
-as_soil_cz.plt(soil_conc_long_cz = soil_conc_long_cz,
-               as = as_soil_unique_cz[5],
+as_soil.plt(soil_conc_long = soil_conc_long,
+               as = as_soil_unique,
                Location_label = soil_conc_long_cz$Location_label,
                Concentration = soil_conc_long_cz$Concentration,
                Measurement_type = soil_conc_long_cz$Measurement_type,
-               Country = soil_conc_long_cz$Country)
+               Country = soil_conc_long$Country)
 
 # Scatter Plots
 
+# IMPORTANT: These colors are fixed to ensure consistency across all plots
+# Each substance always gets the same color regardless of which dataset it appears in
+# Colors are organized by pesticide type for better interpretability
 
-
-# 1. Read and Transform Data
-
-soil_conc <- read.csv(dir_ls(path_home_r(), recurse = T, regexp = "CZ soil concentration comparison.csv"))
-df <- soil_conc
-
-df_log <- df %>%
-  mutate(across(c(3:6, 12), log10))
-
-# 2. Calculate Global Standard Deviation of Residuals
-# Combine residuals from both initial and 56-day models
-res_initial <- df_log$Concentration.intial - df_log$Concentration.sample
-res_56days <- df_log$Concentration.56.days - df_log$Concentration.sample
-sd_log_resid <- sd(c(res_initial, res_56days), na.rm = TRUE)
-
-# 3. Reshape for Plotting
-plot_data <- df_log %>%
-  mutate(Location_Mgmt = paste0(Location, " (", Management, ")")) %>%
-  pivot_longer(
-    cols = c(Concentration.intial, Concentration.56.days),
-    names_to = "Model_Type",
-    values_to = "Modelled_Concentration"
-  ) %>%
-  mutate(Model_Type = recode(Model_Type,
-                             Concentration.intial = "Initial Concentration",
-                             Concentration.56.days = "56 Day Time Averaged"))
-
-# 4. Generate the Plot
-p <- ggplot(plot_data, aes(x = Concentration.sample, y = Modelled_Concentration)) +
-  # 1:1 Line (Dashed)
-  geom_abline(aes(slope = 1, intercept = 0, linetype = "1:1 Line"), color = "black") +
+substance_colors <- c(
+  # Fungicides (reds, oranges, purples, teals)
+  'Azoxystrobin' = '#E41A1C',      # Red
+  'Dimoxystrobin' = '#999999',     # Gray
+  'Difenoconazole' = '#984EA3',    # Purple
+  'Fluopicolide' = '#FF7F00',      # Orange
+  'Fluopyram' = '#8DA0CB',         # Light Blue
+  'Mandipropamid' = '#FFFF33',     # Yellow
+  'Tebuconazole' = '#66C2A5',      # Teal
   
-  # +/- 1 Standard Deviation Lines (Dash-Dot)
-  geom_abline(aes(slope = 1, intercept = sd_log_resid, linetype = "±1 SD"), color = "blue") +
-  geom_abline(aes(slope = 1, intercept = -sd_log_resid, linetype = "±1 SD"), color = "blue") +
+  # Herbicides (blues, greens, browns)
+  'Glyphosate' = '#377EB8',        # Blue
+  'Metobromuron' = '#A65628',      # Brown
+  'Pendimethalin' = '#FC8D62',     # Salmon
+  'Prosulfocarb' = '#4DAF4A',      # Green
   
-  # +/- 1 Order of Magnitude Lines (Dotted)
-  geom_abline(aes(slope = 1, intercept = 1, linetype = "±1 Order of Mag"), color = "red") +
-  geom_abline(aes(slope = 1, intercept = -1, linetype = "±1 Order of Mag"), color = "red") +
-  
-  # Scatter Points
-  geom_point(aes(shape = Active.substance, color = Location_Mgmt), 
-             size = 3.5, alpha = 0.8) +
-  
-  # Paneling and Scales
-  facet_wrap(~Model_Type) +
-  scale_linetype_manual(
-    name = "Reference Lines",
-    values = c("1:1 Line" = "dashed", "±1 SD" = "dotdash", "±1 Order of Mag" = "dotted")
-  ) +
-  scale_shape_manual(values = c(15, 16, 17, 18, 3, 4, 8, 9, 10)) +
-  
-  labs(
-    x = expression(log[10] * "(Measured Concentration)"),
-    y = expression(log[10] * "(Modelled Concentration)"),
-    color = "Location (Management)",
-    shape = "Active Substance"
-  ) +
-  theme_bw() +
-  theme(legend.box = "vertical")
+  # Insecticides (pinks)
+  'Deltamethrin' = '#F781BF'       # Pink
+)
 
-print(p)
+# ============================================================================
+# Define markers (pch values) for locations
+# ============================================================================
+location_markers <- c(
+  'Harlingen' = 16,          # filled circle
+  'Het Hogeland' = 15,       # filled square
+  'Westerkwartier' = 17,     # filled triangle up
+  'Kostice' = 25,            # filled triangle down
+  'Kravsko' = 18,            # filled diamond
+  'Krumvíř' = 11,            # star
+  'Olomouc' = 8,             # asterisk
+  'Postupice' = 23,          # filled diamond (alternative)
+  'Velké Petrovice' = 22,    # filled square (alternative)
+  'Vlašim' = 4,              # cross
+  'Vševily' = 3,             # plus
+  'Znojmo' = 60,             # left triangle
+  'Česká Metuje' = 62        # right triangle
+)
+
+# ============================================================================
+# Function to create scatterplot for a specific timepoint
+# ============================================================================
+create_scatterplot_timepoint <- function(data, country_name, output_prefix, timepoint) {
+  
+  # Prepare data based on timepoint
+  if (timepoint == "initial") {
+    data <- data %>%
+      mutate(
+        Model_concentration = `Concentration intial`,
+        Model_SD = `Concentration intial SD`,
+        Timepoint_label = "Initial Concentrations"
+      )
+    file_suffix <- "initial"
+  } else {  # 56days
+    data <- data %>%
+      mutate(
+        Model_concentration = `Concentration 56 days`,
+        Model_SD = `Concentration 56 days SD`,
+        Timepoint_label = "56-Day Concentrations"
+      )
+    file_suffix <- "56day"
+  }
+  
+  # Calculate plot limits
+  all_values <- c(data$`Concentration sample`, data$Model_concentration)
+  all_values <- all_values[all_values > 0]
+  min_val <- min(all_values)
+  max_val <- max(all_values)
+  plot_min <- min_val * 0.5
+  plot_max <- max_val * 1.5
+  
+  # Get unique substances and locations
+  unique_substances <- sort(unique(data$`Active substance`))
+  unique_locations <- sort(unique(data$Location))
+  
+  # Assign colors and markers to data
+  data <- data %>%
+    mutate(
+      Color = substance_colors[`Active substance`],
+      Marker = location_markers[Location]
+    )
+  
+  # Create output filename
+  png_file <- paste0(output_prefix, "_", file_suffix, "_comparison.png")
+  pdf_file <- paste0(output_prefix, "_", file_suffix, "_comparison.pdf")
+  
+  # ============================================================================
+  # Create PNG plot
+  # ============================================================================
+  png(png_file, width = 10, height = 8, units = "in", res = 300)
+  
+  # Set up plotting area with margins for legends
+  par(mar = c(5, 5, 4, 2), family = "sans")
+  
+  # Create empty plot with log scale
+  plot(1, type = "n", 
+       xlim = c(plot_min, plot_max), 
+       ylim = c(plot_min, plot_max),
+       log = "xy",
+       xlab = expression(paste("Measured concentration (µg ", kg^{-1}, ")")),
+       ylab = expression(paste("Modelled concentration (µg ", kg^{-1}, ")")),
+       main = paste0(country_name, " - ", unique(data$Timepoint_label)),
+       cex.lab = 1.2, cex.axis = 1.0, cex.main = 1.3, font.main = 2)
+  
+  # Add grid
+  grid(col = "gray90", lty = 1)
+  
+  # Add reference lines
+  x_ref <- c(plot_min, plot_max)
+  
+  # 1:1 line
+  lines(x_ref, x_ref, lwd = 1.5, col = "black")
+  
+  # ±1 SD (factor of 2)
+  lines(x_ref, x_ref * 2, lwd = 1, lty = 2, col = "gray40")
+  lines(x_ref, x_ref * 0.5, lwd = 1, lty = 2, col = "gray40")
+  
+  # ±1 order of magnitude (factor of 10)
+  lines(x_ref, x_ref * 10, lwd = 1, lty = 3, col = "gray40")
+  lines(x_ref, x_ref * 0.1, lwd = 1, lty = 3, col = "gray40")
+  
+  # Plot data points with error bars
+  for (i in 1:nrow(data)) {
+    # Error bars
+    arrows(
+      x0 = data$`Concentration sample`[i],
+      y0 = data$Model_concentration[i] - data$Model_SD[i],
+      x1 = data$`Concentration sample`[i],
+      y1 = data$Model_concentration[i] + data$Model_SD[i],
+      angle = 90, code = 3, length = 0, lwd = 1,
+      col = data$Color[i]
+    )
+    
+    # Data points
+    points(
+      x = data$`Concentration sample`[i],
+      y = data$Model_concentration[i],
+      pch = data$Marker[i],
+      col = data$Color[i],
+      bg = data$Color[i],
+      cex = 1.2
+    )
+  }
+  
+  # ============================================================================
+  # Add legends
+  # ============================================================================
+  
+  # Legend 1: Reference lines (top left)
+  legend("topleft", 
+         legend = c("1:1 line", "±1 SD (2×)", "±1 OoM (10×)"),
+         lty = c(1, 2, 3), lwd = c(1.5, 1, 1),
+         col = c("black", "gray40", "gray40"),
+         title = "Reference lines",
+         bty = "o", bg = "white", cex = 0.8, box.lwd = 1)
+  
+  # Legend 2: Active substances (bottom right)
+  legend("bottomright",
+         legend = unique_substances,
+         pch = 16,  # filled circle for all
+         col = substance_colors[unique_substances],
+         pt.cex = 1.2,
+         title = "Active substance",
+         bty = "o", bg = "white", cex = 0.7, box.lwd = 1,
+         ncol = 1)
+  
+  # Legend 3: Locations (top right)
+  legend("topright",
+         legend = unique_locations,
+         pch = location_markers[unique_locations],
+         col = "gray40",
+         pt.bg = "gray40",
+         pt.cex = 1.2,
+         title = "Location",
+         bty = "o", bg = "white", cex = 0.7, box.lwd = 1,
+         ncol = 1)
+  
+  dev.off()
+  
+  # ============================================================================
+  # Create PDF plot (same code but for PDF)
+  # ============================================================================
+  pdf(pdf_file, width = 10, height = 8)
+  
+  par(mar = c(5, 5, 4, 2), family = "sans")
+  
+  plot(1, type = "n", 
+       xlim = c(plot_min, plot_max), 
+       ylim = c(plot_min, plot_max),
+       log = "xy",
+       xlab = expression(paste("Measured concentration (µg ", kg^{-1}, ")")),
+       ylab = expression(paste("Modelled concentration (µg ", kg^{-1}, ")")),
+       main = paste0(country_name, " - ", unique(data$Timepoint_label)),
+       cex.lab = 1.2, cex.axis = 1.0, cex.main = 1.3, font.main = 2)
+  
+  grid(col = "gray90", lty = 1)
+  
+  lines(x_ref, x_ref, lwd = 1.5, col = "black")
+  lines(x_ref, x_ref * 2, lwd = 1, lty = 2, col = "gray40")
+  lines(x_ref, x_ref * 0.5, lwd = 1, lty = 2, col = "gray40")
+  lines(x_ref, x_ref * 10, lwd = 1, lty = 3, col = "gray40")
+  lines(x_ref, x_ref * 0.1, lwd = 1, lty = 3, col = "gray40")
+  
+  for (i in 1:nrow(data)) {
+    arrows(
+      x0 = data$`Concentration sample`[i],
+      y0 = data$Model_concentration[i] - data$Model_SD[i],
+      x1 = data$`Concentration sample`[i],
+      y1 = data$Model_concentration[i] + data$Model_SD[i],
+      angle = 90, code = 3, length = 0, lwd = 1,
+      col = data$Color[i]
+    )
+    
+    points(
+      x = data$`Concentration sample`[i],
+      y = data$Model_concentration[i],
+      pch = data$Marker[i],
+      col = data$Color[i],
+      bg = data$Color[i],
+      cex = 1.2
+    )
+  }
+  
+  legend("topleft", 
+         legend = c("1:1 line", "±1 SD (2×)", "±1 OoM (10×)"),
+         lty = c(1, 2, 3), lwd = c(1.5, 1, 1),
+         col = c("black", "gray40", "gray40"),
+         title = "Reference lines",
+         bty = "o", bg = "white", cex = 0.8, box.lwd = 1)
+  
+  legend("bottomright",
+         legend = unique_substances,
+         pch = 16,
+         col = substance_colors[unique_substances],
+         pt.cex = 1.2,
+         title = "Active substance",
+         bty = "o", bg = "white", cex = 0.7, box.lwd = 1,
+         ncol = 1)
+  
+  legend("topright",
+         legend = unique_locations,
+         pch = location_markers[unique_locations],
+         col = "gray40",
+         pt.bg = "gray40",
+         pt.cex = 1.2,
+         title = "Location",
+         bty = "o", bg = "white", cex = 0.7, box.lwd = 1,
+         ncol = 1)
+  
+  dev.off()
+  
+  cat(paste0("Created: ", png_file, " and ", pdf_file, "\n"))
+}
+
+nl_conc <- dir_ls(path_home_r(), recurse = T, regexp = "NL soil concentration comparison.csv") |> read_csv()
+cz_conc <- dir_ls(path_home_r(), recurse = T, regexp = "CZ soil concentration comparison.csv")|> read_csv()
+
+
+create_scatterplot_timepoint(nl_conc, "Netherlands", "NL", "initial")
+create_scatterplot_timepoint(nl_conc, "Netherlands", "NL", "56days")
+
+create_scatterplot_timepoint(cz_conc, "Czech Republic", "CZ", "initial")
+create_scatterplot_timepoint(cz_conc, "Czech Republic", "CZ", "56days")
+
 
 # Alternative faceted plots
 # Create a data frame for vertical lines (separating locations)

@@ -44,8 +44,7 @@ lau_degurba_nl <- dir_ls(path_home_r(), recurse = T, regexp = "/LAU_RG_01M_2024_
 # Polygons and attributes from the Hydrosheds dataset
 basins_nl <- dir_ls(path_home_r(), recurse = T, regexp = "hydrosheds_lvl12_basins_nl.gpkg") |>
   vect() |> 
-  mutate(HYBAS_ID = as.character(HYBAS_ID)) |> 
-  mask(lau_degurba_nl)
+  mutate(HYBAS_ID = as.character(HYBAS_ID))
 
 # River network #
 river_net <- dir_ls(path_home_r(), recurse = T, regexp = "water_network_12_NL.gpkg") |>
@@ -67,12 +66,13 @@ bulk_dens <- dir_ls(path_home_r(),
   rast()
 
 # Organic carbon Hydroshed, to be substituted with ESDAC octop #
-organic_carbon <- basins_nl |> 
-  select("soc_th_uav") |> 
-  rasterize(bulk_dens,
-            field = "soc_th_uav",
-            touches = T) |> 
-  rename(OC_jrc_NL = soc_th_uav)
+organic_carbon <- dir_ls(path_home_r(),
+                             recurse = T,
+                             regexp = "oc_jrc_NL.nc$") |>
+  rast()
+
+names(organic_carbon) <- "oc_jrc_NL"
+varnames(organic_carbon) <- "oc_jrc_NL"
 
 # Sand content, ESDAC # 
 # sand_jrc_path <- dir_ls(path_home_r(),
@@ -114,7 +114,25 @@ clay <- dir_ls(path_home_r(),
 # - .csv files
 
 # List of priority active substances in soil and water#
-acsubst_name <- c("aclonifen",
+acsubst_name <- c("benzovindiflupyr",
+                  "epoxiconazole",
+                  "tebuconazole",
+                  "fluopicolide",
+                  "penflufen",
+                  "fluopyram",
+                  "bixafen",
+                  "mandipropamid",
+                  "ethofumesate",
+                  "terbuthylazine",
+                  "aclonifen",
+                  "tembotrione",
+                  "metobromuron",
+                  "flutolanil",
+                  "pendimethalin",
+                  "fluoxastrobin",
+                  "dimethomorph",
+                  "fluazinam",
+                  "chlorantraniliprole",
                   "azoxystrobin",
                   "benzovindiflupyr",
                   "boscalid",
@@ -122,33 +140,17 @@ acsubst_name <- c("aclonifen",
                   "cyproconazole",
                   "deltamethrin",
                   "difenoconazole",
-                  "epoxiconazole",
                   "esfenvalerate",
-                  "ethofumesate",
                   "fenpropidin",
-                  "fluazinam",
                   "fludioxonil",
-                  "fluopyram",
                   "glyphosate",
                   "isoxaben",
-                  "mandipropamid",
                   "metamitron",
                   "methoxyfenozide",
                   "pendimethalin",
                   "prochloraz",
                   "propyzamide",
-                  "prosulfocarb",
-                  "terbuthylazine",
-                  "tebuconazole",
-                  "fluopicolide",
-                  "penflufen",
-                  "bixafen",
-                  "tembotrione",
-                  "metobromuron",
-                  "flutolanil",
-                  "fluoxastrobin",
-                  "dimethomorph",
-                  "chlorantraniliprole") |> 
+                  "prosulfocarb") |> 
   unique() |> 
   str_to_sentence()
 
@@ -156,7 +158,7 @@ acsubst_name <- c("aclonifen",
 # acsubst_name[which(!acsubst_name %in% ASs)]
 
 # Spatial extent #
-lau_name <- lau_sample_nl[1]
+lau_name <- lau_sample_nl[5]
 
 # Year of simulation #
 # Remains unchanged
@@ -195,42 +197,51 @@ map_topsoil_riverwater_nl <- function(lau_name,
     ######################################################################
     terraOptions(progress = 1)
     
-    acsubst_water <- c("aclonifen",
-                       "benzovindiflupyr",
+    acsubst_water <- c("benzovindiflupyr",
                        "epoxiconazole",
-                       "ethofumesate",
-                       # "fluazinam",
-                       "fluopyram",
-                       "mandipropamid",
-                       "pendimethalin",
-                       "terbuthylazine",
                        "tebuconazole",
                        "fluopicolide",
                        "penflufen",
+                       "fluopyram",
                        "bixafen",
+                       "mandipropamid",
+                       "ethofumesate",
+                       "terbuthylazine",
+                       "aclonifen",
                        "tembotrione",
                        "metobromuron",
                        "flutolanil",
-                       'fluoxastrobin',
+                       "pendimethalin",
+                       "fluoxastrobin",
                        "dimethomorph",
+                       "fluazinam",
                        "chlorantraniliprole") |> unique() |> str_to_sentence()
     
-    acsubst_soil <- c("azoxystrobin",
+    acsubst_soil <- c("difenoconazole",
+                      "fluazinam",
                       "boscalid",
-                      "cyazofamid",
+                      "azoxystrobin",
+                      "benzovindiflupyr",
+                      "epoxiconazole",
                       "cyproconazole",
-                      "deltamethrin",
-                      "difenoconazole",
                       "esfenvalerate",
-                      "fenpropidin",
-                      "fludioxonil",
-                      "glyphosate",
-                      "isoxaben",
-                      "metamitron",
-                      "methoxyfenozide",
+                      "pendimethalin",
                       "prochloraz",
+                      "prosulfocarb",
+                      "fluopyram",
+                      "ethofumesate",
+                      "terbuthylazine",
+                      'methoxyfenozide',
+                      "fludioxonil",
+                      "metamitron",
+                      "mandipropamid",
+                      "aclonifen",
+                      "fenpropidin",
+                      "glyphosate",
                       "propyzamide",
-                      "prosulfocarb") |> unique() |> str_to_sentence()
+                      "isoxaben",
+                      "cyazofamid",
+                      "deltamethrin") |> unique() |> str_to_sentence()
     
     cat("\r", "Gemup for", lau_name[name]$LAU_NAME, "is being processed.", lau_name |> length() - name, "LAUs remaining.")
     
@@ -294,7 +305,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                    paste(names(basins_lau_nl)[grepl("^pre_mm_s", names(basins_lau_nl))], collapse = ", ")))
     }
     
-    ## Extract precipitation data for the specified month
+    # Extract precipitation data for the specified month #
     prec_lau <- basins_lau_nl[prec_col_name]
     
     # Terrain slope #
@@ -312,11 +323,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
       crop(lau_name[name], touches = T)
     
     # HYDROSHEDS (to be changed to ESDAC octop) Organic carbon content in topsoil #
-    organic_carbon <- (organic_carbon  / (bulk_dens * 10000 * 0.05)) * 100
-    organic_carbon <- organic_carbon |> rename(oc_perc = OC_jrc_NL)
-    
     orcarb_nl <- organic_carbon |>
-      select("oc_perc") |>
       crop(lau_name[name])
 
     # Crop specific spray drift values to the "gemup"
@@ -358,7 +365,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
     # first check if the names of properties are the same in the script and PPDB, 
     # PPDB gets updated every now and then, so must be the scraping script.
     source(dir_ls(path_home_r(), recurse = T, regexp = "ppdb scraping"))
-    chemprop <- chemprop_gen(Active = acsubst_gemup$acsubst) |> 
+    chemprop <- chemprop_gen(Active = acsubst_name) |> 
       select(Active,
              DT50_typical_d,
              Koc_ml.g,
@@ -426,7 +433,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
     # Intersect filtered rivers with selected LAU
     
     rivers_lau <- terra::intersect(river_net, lau_name[name]) |> 
-      terra::merge(basins_lau_nl[c("HYBAS_ID", "dis_m3_pyr")] |>
+      terra::merge(basins_lau_nl[c("HYBAS_ID", "dis_m3_pyr", prec_lau |> names())] |>
                      values(), by = "HYBAS_ID")
     
     # Filter rivers present in the LAU based on selected river class
@@ -436,7 +443,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
     rivers_class_lau_buff <- rivers_class_lau |> terra::buffer(rivbuff_width)
     
     # Intersect gemup with selected river segments so the gemup is expanded to include hydrography of the selected river basin(s)
-    gemup_lau_rivers_class_buff <- gemup_lau[rivers_class_lau_buff]
+    gemup_lau_rivers_class_buff <- rivers_class_lau_buff[gemup_lau]
     
     if(gemup_lau_rivers_class_buff |> nrow() == 0) {
       
@@ -458,7 +465,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                    # weights = T,
                                    # exact = T,
                                    as.polygons = T) |>
-        rename("orcarb_perc" = "oc_perc") |>
+        rename("orcarb_perc" = "oc_jrc_NL") |>
         mutate(orcarb_perc = orcarb_perc/100)
       
       # srunoff_river_seg <- terra::zonal(srunoff_basin,
@@ -576,7 +583,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                                  y = bulk_dens_kg.dm3,
                                                                  z = frac_asubst_soil_water_ini,
                                                                  v = frac_asubst_soil_solid_ini),
-                                                            \(x,y,z,v) (x/(y*5))*(z+v))) |> 
+                                                            \(x,y,z,v) (x/(y*5))*(z+v)*100)) |> 
         ## TWA concentration in soil
         mutate(conc_acsubst_total_soil_56twa_ug.kg = (conc_acsubst_total_soil_ini_ug.kg / (56 * (log(2) / DT50_typical_d))) * (1 - exp(-56 * (log(2) / DT50_typical_d))),
                conc_acsubst_total_soil_365twa_ug.kg = (conc_acsubst_total_soil_ini_ug.kg / (365 * (log(2) / DT50_typical_d))) * (1 - exp(-365 * (log(2) / DT50_typical_d)))) |> 
@@ -586,7 +593,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                0.001423 * .^2 + 0.02153 * .,
                                                1))) |>
         ##Soil chronic RQ
-        mutate(rq_acsubst_total_soil_twa = conc_acsubst_total_soil_56twa_ug.kg/NOEC_earthworm_chron_repr_mg.kg) |> 
+        mutate(rq_acsubst_total_soil_twa = conc_acsubst_total_soil_56twa_ug.kg/(NOEC_earthworm_chron_repr_mg.kg*1000)) |> 
         ## Fraction of daily generated surface runoff. Mean, min, max are calculated over meteorological station within the basins
         ## Add code to match rainfall to AS application period for a given crop!!!!
         mutate(srunoff_month_sandy.mm = map_dbl(prec_month_mm,
@@ -627,7 +634,14 @@ map_topsoil_riverwater_nl <- function(lau_name,
                objectid,
                Crop,
                acsubst,
+               DT50_typical_d,
                aprate_farm_kg.ha,
+               oc_perc,
+               bulk_dens_kg.dm3,
+               clay_perc,
+               sand_perc,
+               slope_perc,
+               prec_month_mm,
                conc_acsubst_total_soil_ini_ug.kg,
                conc_acsubst_total_soil_56twa_ug.kg,
                rq_acsubst_total_soil_twa,
@@ -635,7 +649,6 @@ map_topsoil_riverwater_nl <- function(lau_name,
                sdrift_as_load) |> 
         mutate(Crop = str_replace_all(Crop, "_", " "),
               Crop = str_to_sentence(Crop)) |> 
-        # mutate(rq_acsubst_total_soil_twa = rq_acsubst_total_soil_twa) |>
         mask(lau_name[name])
       
       # Calculate cumulative RQ in soil for individual fields
@@ -737,25 +750,25 @@ map_topsoil_riverwater_nl <- function(lau_name,
         }
       }
       
+      actual_soil_acsubst_name <- soil_farm_mapinput$acsubst |> unique()
+      
       pb <- progress_bar$new(
         format = "[:bar] :percent | :map_type | Substance: :substance | ETA: :eta",
-        total = (length(acsubst_name) * 4) + 2,
+        total = (length(actual_soil_acsubst_name) * 4),
         clear = FALSE,
         width = 100
       )
       
-      actual_soil_acsubst_name <- soil_farm_mapinput$acsubst |> unique()
-      
       # Soil PEC and RQ individual maps 
-      for (as in seq_along(acsubst_name <- actual_soil_acsubst_name)) {
+      for (as in seq_along(as_soil <- actual_soil_acsubst_name)) {
         
         # Store current substance name for progress updates
-        current_substance <- acsubst_name[as]
+        current_substance <- as_soil[as]
         
         # Prepare data
         # Prepare soil data
         soil_data <- soil_farm_mapinput |> 
-          filter(acsubst %in% acsubst_name[as])
+          filter(acsubst %in% as_soil[as])
    
         # Concentration maps palettes
         # Soil concentration palette
@@ -790,7 +803,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         # Concentration maps titles
         # Soil concentration map title
         soil_conc_title <- paste0(
-          acsubst_name[as], " ",
+          as_soil[as], " ",
           endday |> unique(),
           "-day PEC soil after 1x application in ",
           app_month,
@@ -805,7 +818,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
         # RQ maps titles
         # Soil RQ map title
         soil_rq_title <- paste0(
-          acsubst_name[as], " ",
+          as_soil[as], " ",
           endday |> unique(),
           "-day RQ<sub>earthworm</sub> soil after 1x application in ",
           app_month,
@@ -918,7 +931,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                "/", 
                                                paste0(lau_name[name]$LAU_NAME,
                                                       "_",
-                                                      acsubst_name[as],
+                                                      as_soil[as],
                                                       "_PEC_Soil_NL.html")), selfcontained = T)
         
         # Soil RQ maps for individual AS
@@ -1014,7 +1027,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                    "/", 
                                                    paste0(lau_name[name]$LAU_NAME,
                                                           "_",
-                                                          acsubst_name[as],
+                                                          as_soil[as],
                                                           "_RQ_Soil_NL.html")), selfcontained = T)
       }
       
@@ -1156,7 +1169,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
       
       write_excel_csv(soil_farm_mapinput |>
                         values()  |> 
-                        select(-c(LAU_NAME)) |> 
+                        select(-c(LAU_NAME, srunoff_as_load)) |> 
                         cbind(endday |>
                                 as.data.frame()) |> 
                         cbind(lau_name[name] |> 
@@ -1318,7 +1331,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                                  y = bulk_dens_kg.dm3,
                                                                  z = frac_asubst_soil_water_ini,
                                                                  v = frac_asubst_soil_solid_ini),
-                                                            \(x,y,z,v) (x/(y*5))*(z+v))) |> 
+                                                            \(x,y,z,v) (x/(y*5))*(z+v)*100)) |> 
         ## TWA concentration in soil
         mutate(conc_acsubst_total_soil_56twa_ug.kg = (conc_acsubst_total_soil_ini_ug.kg / (56 * (log(2) / DT50_typical_d))) * (1 - exp(-56 * (log(2) / DT50_typical_d))),
                conc_acsubst_total_soil_365twa_ug.kg = (conc_acsubst_total_soil_ini_ug.kg / (365 * (log(2) / DT50_typical_d))) * (1 - exp(-365 * (log(2) / DT50_typical_d)))) |> 
@@ -1328,7 +1341,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                0.001423 * .^2 + 0.02153 * .,
                                                1))) |>
         ##Soil chronic RQ
-        mutate(rq_acsubst_total_soil_twa = conc_acsubst_total_soil_56twa_ug.kg/NOEC_earthworm_chron_repr_mg.kg) |> 
+        mutate(rq_acsubst_total_soil_twa = conc_acsubst_total_soil_56twa_ug.kg/(NOEC_earthworm_chron_repr_mg.kg*1000)) |> 
         ## Fraction of daily generated surface runoff. Mean, min, max are calculated over meteorological station within the basins
         ## Add code to match rainfall to AS application period for a given crop!!!!
         mutate(srunoff_month_sandy.mm = map_dbl(prec_month_mm,
@@ -1369,7 +1382,14 @@ map_topsoil_riverwater_nl <- function(lau_name,
                objectid,
                Crop,
                acsubst,
+               DT50_typical_d,
                aprate_farm_kg.ha,
+               oc_perc,
+               bulk_dens_kg.dm3,
+               clay_perc,
+               sand_perc,
+               slope_perc,
+               prec_month_mm,
                conc_acsubst_total_soil_ini_ug.kg,
                conc_acsubst_total_soil_56twa_ug.kg,
                rq_acsubst_total_soil_twa,
@@ -1377,8 +1397,9 @@ map_topsoil_riverwater_nl <- function(lau_name,
                sdrift_as_load) |> 
         mutate(Crop = str_replace_all(Crop, "_", " "),
                Crop = str_to_sentence(Crop)) |> 
-        # mutate(rq_acsubst_total_soil_twa = rq_acsubst_total_soil_twa) |>
         mask(lau_name[name])
+      
+      soil_farm_mapinput |> view()
       
       # Calculate cumulative RQ in soil for individual fields
       # Create a character type column showing a list of ASs and RQs for each field
@@ -1430,8 +1451,8 @@ map_topsoil_riverwater_nl <- function(lau_name,
         terra::intersect(rivers_class_lau_buff[c("id", "length_m", "dis_m3_pyr")]) |>
         terra::merge(chemprop[c("Active", "NOEC_fish_21_mg.L")], by.x = "acsubst", by.y = "Active") |>
         mutate(conc_mean_river_seg = srunoff_as_load+sdrift_as_load/dis_m3_pyr,
-               rq_mean_river_seg_twa = conc_mean_river_seg/NOEC_fish_21_mg.L/1000) |> 
-        mask(lau_name[name])
+               rq_mean_river_seg_twa = conc_mean_river_seg/NOEC_fish_21_mg.L) |> 
+        mask(gemup_lau)
       
       farm_area_buff <- terra::merge(rivers_class_lau_buff,
                                      cbind(river_seg_mapinput[c("id", "length_m")] |> 
@@ -1441,21 +1462,22 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                              expanse(unit = "m")) |> values(),
                                      by = c("id", "length_m")) |> 
         rename(farm_buff_area.m = y,
-               nr_fields = agg_n)
+               nr_farms_buff = agg_n)
       
       buff_area <- cbind(rivers_class_lau_buff[c("id", "length_m", "dis_m3_pyr")] |> 
-                           aggregate(c("id", "length_m", "dis_m3_pyr")),
+                           aggregate(c("id", "length_m")),
                          rivers_class_lau_buff[c("id", "length_m", "dis_m3_pyr")] |> 
-                           aggregate(c("id", "length_m", "dis_m3_pyr")) |> 
+                           aggregate(c("id", "length_m")) |> 
                            expanse(unit = "m")) |> 
-        rename(buffer_area.m = y,
-               nr_buffers = agg_n)
+        rename(buffer_area.m = y) |> 
+        select(-agg_n) |> 
+        mask(gemup_lau)
       
       river_weight <- terra::merge(farm_area_buff, buff_area |>
                                      values(),
                                    by = c("id", "length_m")) |> 
-        mutate(river_w = case_when(river_class_name == "3_6" ~ (length_m*4)/(buffer_area.m*(farm_buff_area.m/buffer_area.m)),
-                                   river_class_name |> str_extract("0.5_3") == "0.5_3" ~ (length_m*1.5)/(buffer_area.m*(farm_buff_area.m/buffer_area.m))))
+        mutate(river_w = case_when(river_class_name == "3_6" ~ ((length_m*4)/buffer_area.m)*(farm_buff_area.m/buffer_area.m),
+                                   river_class_name |> str_extract("0.5_3") == "0.5_3" ~ ((length_m*1.5)/buffer_area.m)*(farm_buff_area.m/buffer_area.m)))
       
       # Calculate cumulative RQ for fields in river buffer for individual river segments
       # Create a character type column showing a list of ASs and RQs for each river segment
@@ -1468,8 +1490,8 @@ map_topsoil_riverwater_nl <- function(lau_name,
         arrange(desc(rq_mean_river_seg_twa), .by_group = T) |>
         distinct(acsubst, .keep_all = T) |>
         mutate(nr_fields = n(),
-               rq_mean_river_seg_twa = round(rq_mean_river_seg_twa*river_w, 3),
-               rq_mean_river_seg_twa = case_when(rq_mean_river_seg_twa < 0.001 ~ 0.001,
+               rq_mean_river_seg_twa = round(rq_mean_river_seg_twa*river_w, 6),
+               rq_mean_river_seg_twa = case_when(rq_mean_river_seg_twa < 0.000001 ~ 0.000001,
                                                  .default = rq_mean_river_seg_twa)) |> 
         # filter(rq_mean_river_seg_twa >= 0.001) |>
         unite("AS_rq", acsubst, rq_mean_river_seg_twa, sep = " | ", remove = FALSE) |>
@@ -1483,7 +1505,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                    values(),
                                  by =  c("id", "length_m")) |> 
         group_by(id, length_m) |>
-        summarise(sum_rq_mean_river_seg_twa = sum(rq_mean_river_seg_twa), .groups = "keep") |> 
+        summarise(sum_rq_mean_river_seg_twa =sum(round(rq_mean_river_seg_twa*river_w, 10)), .groups = "keep") |> 
         ungroup() |>
         makeValid()
       
@@ -1497,12 +1519,12 @@ map_topsoil_riverwater_nl <- function(lau_name,
                AS_rq = str_remove_all(AS_rq, "="),
                AS_rq = str_remove_all(AS_rq, "\\("),
                AS_rq = str_remove_all(AS_rq, "\\)"),
-               AS_rq = str_replace_all(AS_rq, "0.001", "<0.001")) |> 
+               AS_rq = str_replace_all(AS_rq, "0.000001", "<0.000001")) |> 
         mask(lau_name[name]) |>
         values()
         
-        # Merge all values from the RQ dataframe with river buffer polygons
-        river_cumRQ_all <- terra::merge(rivers_class_lau_buff[c("id", "length_m")],
+      # Merge all values from the RQ dataframe with river buffer polygons
+      river_cumRQ_all <- terra::merge(rivers_class_lau_buff[c("id", "length_m")],
                                         river_cumRQ_df,
                                         by = c("id", "length_m")) 
         
@@ -1566,26 +1588,27 @@ map_topsoil_riverwater_nl <- function(lau_name,
           }
         }
         
+        actual_river_acsubst_name <- river_seg_mapinput$acsubst |> unique()
+        actual_soil_acsubst_name <- soil_farm_mapinput$acsubst |> unique()
+        
         pb <- progress_bar$new(
           format = "[:bar] :percent | :map_type | Substance: :substance | ETA: :eta",
-          total = (length(acsubst_name) * 4) + 2,
+          total = (length(actual_soil_acsubst_name) + length(actual_river_acsubst_name) * 4) + 2,
           clear = FALSE,
           width = 100
         )
         
-        actual_soil_acsubst_name <- soil_farm_mapinput$acsubst |> unique()
-        actual_river_acsubst_name <- river_seg_mapinput$acsubst |> unique()
         
         # Soil PEC and RQ individual maps 
-        for (as in seq_along(acsubst_name <- actual_soil_acsubst_name)) {
+        for (as in seq_along(as_soil <- actual_soil_acsubst_name)) {
           
           # Store current substance name for progress updates
-          current_substance <- acsubst_name[as]
+          current_substance <- as_soil[as]
           
           # Prepare data
           # Prepare soil data
           soil_data <- soil_farm_mapinput |> 
-            filter(acsubst %in% acsubst_name[as])
+            filter(acsubst %in% as_soil[as])
           
           # Concentration maps palettes
           # Soil concentration palette
@@ -1620,7 +1643,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           # Concentration maps titles
           # Soil concentration map title
           soil_conc_title <- paste0(
-            acsubst_name[as], " ",
+            as_soil[as], " ",
             endday |> unique(),
             "-day PEC soil after 1x application in ",
             app_month,
@@ -1635,7 +1658,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           # RQ maps titles
           # Soil RQ map title
           soil_rq_title <- paste0(
-            acsubst_name[as], " ",
+            as_soil[as], " ",
             endday |> unique(),
             "-day RQ<sub>earthworm</sub> soil after 1x application in ",
             app_month,
@@ -1748,7 +1771,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                  "/", 
                                                  paste0(lau_name[name]$LAU_NAME,
                                                         "_",
-                                                        acsubst_name[as],
+                                                        as_soil[as],
                                                         "_PEC_Soil_NL.html")), selfcontained = T)
           
           # Soil RQ maps for individual AS
@@ -1844,15 +1867,15 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                      "/", 
                                                      paste0(lau_name[name]$LAU_NAME,
                                                             "_",
-                                                            acsubst_name[as],
+                                                            as_soil[as],
                                                             "_RQ_Soil_NL.html")), selfcontained = T)
         }
         
         # Water PEC and RQ individual maps 
-        for (as in seq_along(acsubst_name <- actual_river_acsubst_name)) {
+        for (as in seq_along(as_river <- actual_river_acsubst_name)) {
           
           # Store current substance name for progress updates
-          current_substance <- acsubst_name[as]
+          current_substance <- as_river[as]
           
           # Prepare data
           # Prepare river water data
@@ -1864,7 +1887,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                                        "rq_mean_river_seg_twa",
                                                                        "conc_mean_river_seg",
                                                                        "acsubst")] |> 
-                                                    filter(acsubst %in% acsubst_name[as]),
+                                                    filter(acsubst %in% as_river[as]),
                                                   river_weight[c("id",
                                                                  "length_m",
                                                                  "river_w")] |> 
@@ -1875,9 +1898,8 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                 length_m) |> 
                                        arrange(desc(rq_mean_river_seg_twa), .by_group = T) |>
                                        mutate(nr_fields = n(),
-                                              rq_mean_river_seg_twa = round(sum(rq_mean_river_seg_twa*river_w), 4),
-                                              conc_mean_river_seg = mean(conc_mean_river_seg*river_w),
-                                              .groups = "keep") |> 
+                                              rq_mean_river_seg_twa = round(rq_mean_river_seg_twa*river_w, 10),
+                                              conc_mean_river_seg = round(median(conc_mean_river_seg*river_w), 10)) |> 
                                        distinct(acsubst, .keep_all = T) |>
                                        ungroup() |> 
                                        values(),
@@ -1933,7 +1955,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           # Concentration maps titles
           # River water concentration map title
           river_conc_title <- paste0(
-            acsubst_name[as], " ",
+            as_river[as], " ",
             endday |> max(),
             "-day PEC<sub>time- and area-weighted</sub> surface water after 1x application in ",
             app_month,
@@ -1948,7 +1970,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
           # RQ maps titles
           # River water RQ map title
           river_rq_title <- paste0(
-            acsubst_name[as], " ",
+            as_river[as], " ",
             endday |> unique(),
             "-day individual RQ<sub>fish, area-weighted</sub> surface water after 1x application in ",
             app_month,
@@ -2003,6 +2025,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
               weight = 0.25,
               opacity = 1,
               popup = ~paste0("<b>River ID: </b>", "<b>", id, "</b><br>",
+                              "<b>River segment length (m): </b>", "<b>", round(length_m, 2), "</b><br>",
                               "<b># of fields in </b>", "<b>", rivbuff_width, " meter</b>", "<b>", " buffer: ", "</b>",  "<b>", nr_fields, "</b><br>",
                               "<b>Individual PEC surface water (\u00B5g\u00D7dm\u207B\u00B3): </b>",
                               "<b>",
@@ -2109,7 +2132,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                   "/", 
                                                   paste0(lau_name[name]$LAU_NAME,
                                                          "_",
-                                                         acsubst_name[as],
+                                                         as_river[as],
                                                          "_",
                                                          river_class_name,
                                                          "_PEC_Water_NL.html")), selfcontained = T)
@@ -2159,6 +2182,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
               weight = 0.25,
               opacity = 1,
               popup = ~paste0("<b>River name: </b>", "<b>", id, "</b><br>",
+                              "<b>River segment length (m): </b>", "<b>", round(length_m, 2), "</b><br>",
                               "<b># of fields in </b>", "<b>", rivbuff_width, " meter</b>", "<b>", " buffer: ", "</b>",  "<b>", nr_fields, "</b><br>",
                               "<b>Individual RQ Surface water: </b>",
                               "<b>",
@@ -2255,7 +2279,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                       "/", 
                                                       paste0(lau_name[name]$LAU_NAME,
                                                              "_",
-                                                             acsubst_name[as],
+                                                             as_river[as],
                                                              "_",
                                                              river_class_name,
                                                              "_RQ_Water_NL.html")), selfcontained = T)
@@ -2422,7 +2446,10 @@ map_topsoil_riverwater_nl <- function(lau_name,
         
         write_excel_csv(soil_farm_mapinput |>
                           values()  |> 
-                          select(-c(LAU_NAME)) |> 
+                          select(-c(LAU_NAME,
+                                    conc_acsubst_total_soil_56twa_ug.kg,
+                                    conc_acsubst_total_soil_ini_ug.kg,
+                                    srunoff_as_load)) |> 
                           cbind(endday |>
                                   as.data.frame()) |> 
                           cbind(lau_name[name] |> 
@@ -2489,6 +2516,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
             weight = 0.25,
             opacity = 1,
             popup = ~paste0("<b>River name: </b>", "<b>", id, "</b><br>",
+                            "<b>River segment length (m): </b>", "<b>", round(length_m, 2), "</b><br>",
                             "<b># of fields in </b>", "<b>", rivbuff_width, " meter</b>", "<b>", " buffer: ", "</b>",  "<b>", nr_fields, "</b><br>",
                             "<b>Cumulative RQ surface water: </b>", "<b>",
                             ifelse(is.na(sum_rq_mean_river_seg_twa), 
@@ -2507,7 +2535,7 @@ map_topsoil_riverwater_nl <- function(lau_name,
                       weight = 0.5,
                       opacity = 0.25,
                       fillColor = "#1f78b4",
-                      popup = ~paste0("<b>Catchment ID: ",HYBAS_ID |> as.character(),"</b><br>",
+                      popup = ~paste0("<b>Catchment ID: ", HYBAS_ID |> as.character(),"</b><br>",
                                       "<b>Annual discharge m\u00B3: ", format_power10(dis_m3_pyr, 3),"</b><br>"),
                       highlightOptions = highlightOptions(color = "black",
                                                           weight = 3,
@@ -2587,18 +2615,25 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                                     river_class_name,
                                                     "_RQcum_Water_NL.html"), selfcontained = T)  
         
-        write_excel_csv(river_seg_mapinput |> 
-                          select(id,
-                                 acsubst,
-                                 srunoff_as_load,
-                                 sdrift_as_load,
-                                 conc_mean_river_seg) |> 
+        write_excel_csv(terra::merge(river_seg_mapinput,
+                                     river_weight[c("id",
+                                                    "length_m",
+                                                    "buffer_area.m",
+                                                    "river_w",
+                                                    "mean_dis_m3_pyr",
+                                                    "pre_mm_s07",
+                                                    "nr_farms_buff")] |> 
+                                       values(),
+                                       by = c("id", "length_m")) |>
                           values() |> 
+                          mutate(conc_mean_river_seg = median(conc_mean_river_seg  * river_w)) |>
+                          select(-c(rq_mean_river_seg_twa,
+                                    NOEC_fish_21_mg.L,
+                                    dis_m3_pyr)) |>
                           cbind(endday |>
                                   as.data.frame()) |> 
-                          cbind(lau_name[name] |>
-                                  as.data.frame()) |> 
                           rename(conc_river_ug.dm3 = conc_mean_river_seg,
+                                 srunoff_as_load_kg = srunoff_as_load,
                                  simtime_day = endday),
                         paste0(path_home_r(),
                                "/Water/PEC/",
@@ -2607,16 +2642,25 @@ map_topsoil_riverwater_nl <- function(lau_name,
                                river_class_name,
                                "_PEC_Water_NL.csv"))
         
-        write_excel_csv(river_seg_mapinput |> 
-                          select(id,
-                                 acsubst,
-                                 rq_mean_river_seg_twa) |> 
+        write_excel_csv(terra::merge(river_seg_mapinput,
+                                     river_weight[c("id",
+                                                    "length_m",
+                                                    "buffer_area.m",
+                                                    "river_w",
+                                                    "mean_dis_m3_pyr",
+                                                    "pre_mm_s07",
+                                                    "nr_farms_buff")] |>
+                                       values(), 
+                                       by =  c("id", "length_m")) |> 
                           values() |> 
+                          mutate(rq_river_seg_twa  = rq_mean_river_seg_twa  * river_w) |> 
+                          select(-c(conc_mean_river_seg,
+                                    rq_mean_river_seg_twa,
+                                    dis_m3_pyr)) |>
                           cbind(endday |>
                                   as.data.frame()) |> 
-                          cbind(lau_name[name] |>
-                                  as.data.frame()) |> 
-                          rename(simtime_day = endday),
+                          rename(simtime_day = endday,
+                                 srunoff_as_load_kg = srunoff_as_load),
                         paste0(path_home_r(),
                                "/Water/RQ/",
                                lau_name[name]$LAU_NAME,
