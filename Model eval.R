@@ -5,7 +5,7 @@ library(terra)
 library(tmap)
 library(readxl)
 library(scales)
-library(cowplot)
+library(ggprism)
 
 
 #########################################################
@@ -126,7 +126,7 @@ eval_data_pec_nl <- soil_pec_nl |>
          "Concentration intial SD" = soil_conc_ini_sd,
          "Concentration 56 days" = soil_conc_56d_med,
          "Concentration 56 days SD" = soil_conc_56d_sd,
-         "# of fields" = nr_field)
+         "# of fields" = nr_field) 
 
 eval_data_mec_nl <- soil_mec_nl |>
   left_join(site_coord_nl |> values(), by = join_by("Sample_code" == "site_id")) |> 
@@ -136,10 +136,9 @@ eval_data_mec_nl <- soil_mec_nl |>
   bind_cols("Concentration units" = "µg × kg⁻¹") |> 
   rename("Location" = LAU_NAME,
          "Concentration sample" = soil_conc_sample,
-         "Active substance" = Active,
-         "# of fields" = nr_samples)
+         "Active substance" = Active)
 
-eval_data_df_nl <- left_join(eval_data_pec_nl, eval_data_mec_nl, by = c("Active substance", "Location", "Concentration units")) |> na.omit() |> view()
+eval_data_df_nl <- left_join(eval_data_mec_nl, eval_data_pec_nl , by = c("Active substance", "Location")) |> na.omit()
 write_excel_csv(eval_data_df_nl, "NL soil concentration comparison.csv")
 
 # DK sampling site coordinates
@@ -230,113 +229,102 @@ sampling_sites_map(lau_degurba_cz, site_coord_cz)
 #   mask(lau_degurba_dk |> filter(LAU_NAME %in% lau_sample_dk$LAU_NAME))
 
 # Read the data
-soil_conc <- dir_ls(path_home_r(), recurse = T, regexp = "NL soil concentration comparison.csv") |> read.csv()
+nl_conc <- dir_ls(path_home_r(), recurse = T, regexp = "NL soil concentration comparison.csv") |> read_csv()
+cz_conc <- dir_ls(path_home_r(), recurse = T, regexp = "CZ soil concentration comparison.csv")|> read_csv()
 
 # Prepare data for plotting
-soil_conc_long <- soil_conc %>%
+soil_conc_long <- nl_conc |> 
   # Create location label with number of fields
-  mutate(Location_label = paste0(Location, "\n(n=", X..of.fields.x, ")")) %>%
-  # Reshape data to long format
+  mutate(Location_label = paste0(Location, "\n(n=", `# of fields`, ")")) |> 
   pivot_longer(
-    cols = c(Concentration.sample, Concentration.intial, Concentration.56.days),
+    cols = c(`Concentration sample`, `Concentration intial`, `Concentration 56 days`),
     names_to = "Measurement_type",
     values_to = "Concentration"
-  ) %>%
-  # Add error bar values
+  ) |> 
   mutate(
-    SD = case_when(
-      Measurement_type == "Concentration.intial" ~ Concentration.intial.SD,
-      Measurement_type == "Concentration.56.days" ~ Concentration.56.days.SD,
-      TRUE ~ NA_real_
-    ),
-    # Clean up measurement type labels
-    Measurement_type = case_when(
-      Measurement_type == "Concentration.sample" ~ "Sample (measured)",
-      Measurement_type == "Concentration.intial" ~ "Initial (modeled)",
-      Measurement_type == "Concentration.56.days" ~ "56-day TWA (modeled)"
-    )
-  ) %>%
+  SD = case_when(
+    Measurement_type == "Concentration intial" ~ "Concentration intial SD",
+    Measurement_type == "Concentration 56 days" ~ "Concentration 56 days SD"),
+  # Clean up measurement type labels
+  Measurement_type = case_when(
+    Measurement_type == "Concentration sample" ~ "Sample (measured)",
+    Measurement_type == "Concentration intial" ~ "Initial (modeled)",
+    Measurement_type == "Concentration 56 days" ~ "56-day TWA (modeled)"
+  )) |> 
+  mutate(
   # Reorder factor levels for plotting
-  mutate(
     Measurement_type = factor(Measurement_type, 
                               levels = c("Sample (measured)", 
                                          "Initial (modeled)", 
                                          "56-day TWA (modeled)")),
     Location_label = factor(Location_label, 
-                            levels = unique(Location_label[order(Location, Active.substance)]))
-  )
-
-
+                            levels = unique(Location_label[order(Location, `Active substance`)]))) |> 
+  mutate(conc_ini_lsd = Concentration - `Concentration intial SD`,
+         conc_ini_lsd = case_when(Measurement_type == "56-day TWA (modeled)" ~ NA,
+                                  Measurement_type == "Sample (measured)" ~ NA,
+                                  .default = conc_ini_lsd),
+         conc_ini_usd = Concentration + `Concentration intial SD`,
+         conc_ini_usd = case_when(Measurement_type == "56-day TWA (modeled)" ~ NA,
+                                  Measurement_type == "Sample (measured)" ~ NA,
+                                  .default = conc_ini_usd),
+         conc_twa_lsd = Concentration - `Concentration 56 days SD`,
+         conc_twa_lsd = case_when(Measurement_type == "Initial (modeled)" ~ NA,
+                                  Measurement_type == "Sample (measured)" ~ NA,
+                                  .default = conc_twa_lsd),
+         conc_twa_usd = Concentration + `Concentration 56 days SD`,
+         conc_twa_usd = case_when(Measurement_type == "Initial (modeled)" ~ NA,
+                                  Measurement_type == "Sample (measured)" ~ NA,
+                                  .default = conc_twa_usd))
+soil_conc_long |> view()
 # BAR PLOT
-as_soil.plt <- function(soil_conc_long, as, Location_label, Concentration, Measurement_type, Country){
-  
   unique_locations <- soil_conc_long %>%
-    filter(Active.substance == as) %>%
-    distinct(Location_label, Active.substance) %>%
-    arrange(Location_label) %>%
-    group_by(Active.substance) %>%
+    filter(Management == "Conventional") %>%
+    distinct(Location, `# of fields`) |> 
     mutate(location_num = row_number()) %>%
     ungroup()
   
   vline_data <- unique_locations %>%
-    group_by(Active.substance) %>%
-    filter(location_num < max(location_num)) %>%
+    group_by(Location) %>%
     mutate(xintercept = location_num + 0.5) %>%
     ungroup()  
-    
-  p <- soil_conc_long %>%
-    filter(Active.substance == as) %>%
-    ggplot(aes(x = Location_label, y = Concentration, fill = Measurement_type)) +
+  
+  ggplot(soil_conc_long, 
+         aes(x = Location_label, y = Concentration, fill = Measurement_type)) +
     geom_bar(stat = "identity", position = position_dodge(width = 0.9), width = 0.8) +
-    geom_errorbar(aes(ymin = Concentration - SD, ymax = Concentration + SD),
+    geom_errorbar(aes(ymin = conc_ini_lsd , ymax = conc_ini_usd),
                   position = position_dodge(width = 0.9),
                   width = 0.25,
                   na.rm = TRUE) +
-    # Add vertical dashed lines
-    geom_vline(data = vline_data, 
+    geom_errorbar(aes(ymin = conc_twa_lsd , ymax = conc_twa_usd),
+                  position = position_dodge(width = 0.9),
+                  width = 0.25,
+                  na.rm = TRUE) +
+    facet_wrap(~ `Active substance`, scales = "free_y", ncol = 1) +
+    scale_fill_manual(values = c("Sample (measured)" = "#E69F00", 
+                                 "Initial (modeled)" = "#56B4E9", 
+                                 "56-day TWA (modeled)" = "#009E73")) +
+    geom_vline(data = vline_data[-14,], 
                aes(xintercept = xintercept), 
                linetype = "dashed", 
                color = "gray50", 
                linewidth = 0.5) +
-    # facet_wrap(~ Active.substance, scales = "free_y", ncol = 1) +
-    scale_fill_manual(values = c("Sample (measured)" = "#E69F00", 
-                                 "Initial (modeled)" = "#56B4E9", 
-                                 "56-day TWA (modeled)" = "#009E73")) +
     labs(
-      title = paste0(as, ": Comparison of Measured and Modeled Concentrations in Soil in ", Country),
+      title = "Comparison of Measured and Modeled Pesticide Concentrations in Soil",
       subtitle = "Error bars represent standard deviation (SD) for modeled values",
-      x = "Location (n = number of fields growing oilseed rape)",
-      y = paste0("(\u00B5g\u00D7kg\u207B\u00B9)"),
+      x = "Location (n = number of fields)",
+      y = expression(paste("Concentration (", mu, "g ", " kg"^{-1}, ")")),
       fill = "Measurement Type"
     ) +
     theme_minimal() +
     theme(
-      # Remove all grid lines
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      # Keep axis lines
-      axis.line = element_line(color = "black", linewidth = 0.5),
       axis.text.x = element_text(angle = 45, hjust = 1, size = 9),
       legend.position = "bottom",
       legend.title = element_text(face = "bold"),
       strip.text = element_text(face = "bold", size = 12),
       strip.background = element_rect(fill = "lightgray", color = NA),
       plot.title = element_text(face = "bold", size = 14),
-      plot.subtitle = element_text(size = 10, color = "gray40"),
-      panel.background = element_rect(fill = "white", color = NA),
-      plot.background = element_rect(fill = "white", color = NA)
+      plot.subtitle = element_text(size = 10, color = "gray40")
     )
-  
-  print(p)
-  
-}
-
-as_soil.plt(soil_conc_long = soil_conc_long,
-               as = as_soil_unique,
-               Location_label = soil_conc_long$Location_label,
-               Concentration = soil_conc_long$Concentration,
-               Measurement_type = soil_conc_long$Measurement_type,
-               Country = soil_conc_long$Country)
 
 # Scatter Plots
 
@@ -368,9 +356,9 @@ substance_colors <- c(
 # Define markers (pch values) for locations
 # ============================================================================
 location_markers <- c(
-  'Harlingen' = 0,          # filled circle
-  'Het Hogeland' = 1,       # filled square
-  'Westerkwartier' = 2,     # filled triangle up
+  'Harlingen' = 15,          # filled circle
+  'Het Hogeland' = 16,       # filled square
+  'Westerkwartier' = 17,     # filled triangle up
   'Kostice' = 25,            # filled triangle down
   'Kravsko' = 18,            # filled diamond
   'Krumvíř' = 11,            # star
@@ -383,58 +371,11 @@ location_markers <- c(
   'Česká Metuje' = 62        # right triangle
 )
 
-
-ggplot(nl_conc, aes(x = `Concentration sample`, y = `Concentration 56 days`)) +
-  geom_point(
-    aes(color = `Active substance`, shape = Location), 
-    size = 3,
-    alpha = 1
-  ) +
-  geom_line(data = data.frame(x = c(1, 10000), y = c(1, 10000)), aes(x = x, y = y, linetype = "1:1 line")) +
-  geom_line(data = data.frame(x = c(1, 10000), y = c(10, 100000)), aes(x = x, y = y, linetype = "±1 OoM (10×)")) +
-  geom_line(data = data.frame(x = c(10, 10000), y = c(1, 1000)), aes(x = x, y = y, linetype = "±1 OoM (10×)")) +
-  scale_linetype_manual(
-    name = "Reference lines",
-    values = c("1:1 line" = "solid", 
-               "±1 OoM (10×)" = "dashed")) +
-  geom_errorbar(aes(ymin = `Concentration 56 days` - `Concentration 56 days SD`,
-        ymax = `Concentration 56 days` + `Concentration 56 days SD`,
-        color = `Active substance`),
-        width = 0.1,
-        linewidth = 0.5,
-        alpha = 0.7) +
-  # Scales
-  expand_limits(x = c(1, 10000), y = c(1, 10000)) +
-  scale_color_manual(values = substance_colors) +
-  scale_shape_manual(values = location_markers) +
-  labs(y = expression(paste("Measured concentration (µg ", kg^{-1}, ")")),
-    x = expression(paste("Modelled concentration (µg ", kg^{-1}, ")")),
-    title = "Netherlands - Initial Concentrations",
-    color = "Active substance",
-    shape = "Location"
-  ) +
-  scale_x_log10(breaks = trans_breaks("log10", function(x) 10^x),
-                labels = trans_format("log10", math_format(10^.x))) +
-  scale_y_log10(breaks = trans_breaks("log10", function(x) 10^x),
-                labels = trans_format("log10", math_format(10^.x))) +
-  theme_bw(base_size = 12) +
-  theme(
-    aspect.ratio = 1,
-    plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
-    legend.position = "right",
-    legend.box = "vertical",
-    legend.spacing.y = unit(0.3, "cm"),
-    panel.grid.minor = element_blank(),
-    panel.grid.major = element_line(color = "gray90", linewidth = 0.3))
-
-  
-
-
-
 # ============================================================================
 # Function to create scatterplot for a specific timepoint
 # ============================================================================
-create_ggplot <- function(data, title, timepoint = "initial") {
+
+pec_mec_scatter.plt <- function(data, country , timepoint = "initial") {
   
   # Select which concentration to use
   if (timepoint == "initial") {
@@ -451,67 +392,70 @@ create_ggplot <- function(data, title, timepoint = "initial") {
       )
   }
   
-  
-  # Create the plot
-  p <- ggplot(data, aes(x = Model, y = `Concentration sample`)) +
-    # Reference lines
-    geom_abline(intercept = 0, slope = 1, 
-                linewidth = 1, color = "black") +
-    geom_abline(intercept = 10, slope = 1, 
-                linewidth = 0.8, linetype = "dashed", color = "gray40") +
-    geom_abline(intercept = -10, slope = 1, 
-                linewidth = 0.8, linetype = "dashed", color = "gray40") +
-    # geom_abline(intercept = 0, slope = 1, 
-    #             linewidth = 0.8, linetype = "dotted", color = "gray40") +
-    # geom_abline(intercept = 0, slope = 1, 
-    #             linewidth = 0.8, linetype = "dotted", color = "gray40") +
-    # Error bars
-    geom_errorbar(
-      aes(ymin = Model - Model_SD, ymax = Model + Model_SD, 
-          color = `Active substance`),
-      width = 0, linewidth = 0.5, alpha = 0.7
-    ) +
-    # Points
+plt <- ggplot(nl_conc, aes(x = `Concentration sample`, y = `Concentration 56 days`)) +
     geom_point(
       aes(color = `Active substance`, shape = Location), 
-      size = 3, alpha = 0.8
+      size = 2,
+      alpha = 0.5,
+      stroke = 0.7
     ) +
+  geom_line(data = data.frame(x = c(1, 100000), y = c(1, 100000)), aes(x = x, y = y, linetype = "1:1 line")) +
+  geom_line(data = data.frame(x = c(1, 10000), y = c(10, 100000)), aes(x = x, y = y, linetype = "±1 OoM (10×)")) +
+  geom_line(data = data.frame(x = c(10, 100000), y = c(1, 10000)), aes(x = x, y = y, linetype = "±1 OoM (10×)")) +
+  # geom_line(data = data.frame(x = c(1, 100000), y = c(100, 100000)), aes(x = x, y = y, linetype = "±2 OoM (100×)")) +
+  #   geom_line(data = data.frame(x = c(100, 100000), y = c(1, 1000)), aes(x = x, y = y, linetype = "±2 OoM (100×)")) +
+    scale_linetype_manual(
+      name = "Reference lines",
+      values = c("1:1 line" = "solid", 
+                 # "±2 OoM (100×)" = "dotted",
+                 "±1 OoM (10×)" = "dashed")) +
+    geom_errorbar(aes(ymin = `Concentration 56 days` - `Concentration 56 days SD`,
+                      ymax = `Concentration 56 days` + `Concentration 56 days SD`,
+                      color = `Active substance`),
+                  width = 0.1,
+                  linewidth = 0.25,
+                  alpha = 1) +
     # Scales
-    scale_x_log10(limits = c(plot_min, plot_max),
-                  breaks = trans_breaks("log10", function(x) 10^x),
-                  labels = trans_format("log10", math_format(10^.x))) +
-    scale_y_log10(limits = c(plot_min, plot_max),
-                  breaks = trans_breaks("log10", function(x) 10^x),
-                  labels = trans_format("log10", math_format(10^.x))) +
-    scale_color_manual(values = substance_colors) +
+    scale_color_manual(values = substance_colors, aesthetics = c("colour", "fill")) +
     scale_shape_manual(values = location_markers) +
-    # Labels
-    labs(
-      x = expression(paste("Measured concentration (µg ", kg^{-1}, ")")),
-      y = expression(paste("Modelled concentration (µg ", kg^{-1}, ")")),
-      title = title,
-      color = "Active substance",
-      shape = "Location"
+    labs(y = expression(paste("Measured concentration (µg ", kg^{-1}, ")")),
+         x = expression(paste("Modelled concentration (µg ", kg^{-1}, ")")),
+         title = paste0(country, ": ", timepoint, "soil concentration"),
+         color = "Active substance",
+         shape = "Location"
     ) +
-    # Theme
+    scale_x_log10(breaks = breaks_log(n = 6, 10),
+                  limit = c(1e0, 1e5),
+                  expand = c(0, 0),
+                  minor_breaks = rep(1:9, 5)*(10^rep(0:4, each = 9)),
+                  guide = "prism_minor",
+                  labels = label_log()) +
+    scale_y_log10(breaks = breaks_log(n = 6, 10),
+                  limit = c(1e0, 1e5),
+                  expand = c(0, 0),
+                  minor_breaks = rep(1:9, 5)*(10^rep(0:4, each = 9)),
+                  guide = "prism_minor",
+                  labels = label_log()) +
     theme_bw(base_size = 12) +
     theme(
-      aspect.ratio = 1,  # Square plot
+      aspect.ratio = 1,
       plot.title = element_text(hjust = 0.5, face = "bold", size = 14),
       legend.position = "right",
-      panel.grid.minor = element_blank()
-    ) +
-    # Make it square
+      legend.box = "vertical",
+      legend.spacing.y = unit(0.3, "cm"),
+      panel.grid = element_blank()) +
     coord_fixed()
   
-  return(p)
+  print(plt)
+  # Save plot
+  ggsave(paste0(data$Country |> unique(),"_PEC_soil.png"), 
+         plt, width = 12, height = 8, dpi = 300)
+
 }
+pec_mec_scatter.plt(nl_conc, "Netherlands", "initial")
+
 
 # Example: Create ggplot version
-p_nl_initial <- create_ggplot(nl_conc, "Netherlands - Initial Concentrations", "initial")
-
-nl_conc <- dir_ls(path_home_r(), recurse = T, regexp = "NL soil concentration comparison.csv") |> read_csv()
-cz_conc <- dir_ls(path_home_r(), recurse = T, regexp = "CZ soil concentration comparison.csv")|> read_csv()
 
 create_scatterplot_timepoint(nl_conc, "Netherlands", "NL", "initial")
 create_scatterplot_timepoint(nl_conc, "Netherlands", "NL", "56days")

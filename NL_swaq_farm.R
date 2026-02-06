@@ -51,7 +51,7 @@ river_net <- dir_ls(path_home_r(), recurse = T, regexp = "water_network_12_NL.gp
   vect()
 
 ## Selection of dutch river class: "3_6", "0.5_3_L20", "0.5_3_L60", "0.5_3_L150", "0.5_3_Lmax"
-river_class_name <- "0.5_3_L150"
+river_class_name <- "3_6"
 
 # Terrain slope, FAO #
 terrain_slope <- dir_ls(path_home_r(),
@@ -1398,8 +1398,6 @@ map_topsoil_riverwater_nl <- function(lau_name,
         mutate(Crop = str_replace_all(Crop, "_", " "),
                Crop = str_to_sentence(Crop)) |> 
         mask(lau_name[name])
-      
-      soil_farm_mapinput |> view()
       
       # Calculate cumulative RQ in soil for individual fields
       # Create a character type column showing a list of ASs and RQs for each field
